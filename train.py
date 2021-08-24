@@ -61,11 +61,11 @@ def create_net(device,
 
 def train_net(net,
               device,
-              epochs=5,
-              batch_size=2,
+              epochs=20,
+              batch_size=512,
               lr=0.0001,
               val_percent=0.2,
-              img_size=100,
+              img_size=51,
               save_cp=True,
               load_optim=False,
               load_scheduler=False,
@@ -232,9 +232,9 @@ def train_net(net,
 def get_args():
     parser = argparse.ArgumentParser(description='Train the Net on images and target masks',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-e', '--epochs', metavar='E', type=int, default=5,
+    parser.add_argument('-e', '--epochs', metavar='E', type=int, default=20,
                         help='Number of epochs', dest='epochs')
-    parser.add_argument('-b', '--batch-size', metavar='B', type=int, nargs='?', default=2,
+    parser.add_argument('-b', '--batch-size', metavar='B', type=int, nargs='?', default=512,
                         help='Batch size', dest='batchsize')
     parser.add_argument('-l', '--learning-rate', metavar='LR', type=float, nargs='?', default=0.0001,
                         help='Learning rate', dest='lr')
