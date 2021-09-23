@@ -56,4 +56,4 @@ def eval_net(net, val_loader, device, final=False, PR_curve_save_dir=None):
             plt.savefig(os.path.join(PR_curve_save_dir, 'PR-curve.png'))
         # print('Validation pred values:', pred_ori_list, '\nValidation true values:', true_list)
         train_log.info('\n'+metrics.classification_report(true_list, pred_list))
-        return tot / n_val if not final else os.path.join(PR_curve_save_dir, 'PR-curve.png')
+        return metrics.roc_auc_score(true_list, pred_ori_list) if not final else os.path.join(PR_curve_save_dir, 'PR-curve.png') #return tot / n_val if not final else os.path.join(PR_curve_save_dir, 'PR-curve.png')

@@ -132,7 +132,7 @@ def train_net(net,
     #                           {'params':classifier_weight_list},
     #                           {'params':classifier_bias_list,'weight_decay':0}], lr=lr, weight_decay=1e-8, momentum=0.9)
     optimizer = optim.RMSprop(net.parameters(), lr=lr, weight_decay=1e-8, momentum=0.9)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=10, factor=0.1, cooldown=1, min_lr=1e-8, verbose=True)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min' if module.n_classes > 1 else 'max', patience=10, factor=0.1, cooldown=1, min_lr=1e-8, verbose=True)
     if load_optim:
         optimizer.load_state_dict(torch.load(load_optim, map_location=device))
     if load_scheduler:
@@ -144,7 +144,7 @@ def train_net(net,
         criterion = nn.BCEWithLogitsLoss() # FocalLoss(alpha=1/2) # pos_weight=torch.tensor([0.8]).to(device)
 
     global_step = 0
-    best_val_score  = float('inf')
+    best_val_score  = float('inf') if module.n_classes > 1 else -1
     for epoch in range(epochs):
         net.train()
 
@@ -190,8 +190,10 @@ def train_net(net,
                         train_log.info('Validation cross entropy: {}'.format(val_score))
                         writer.add_scalar('Loss/val', val_score, global_step)
                     else:
-                        train_log.info('Validation binary cross entropy: {}'.format(val_score))
-                        writer.add_scalar('Loss/val', val_score, global_step)
+                        # train_log.info('Validation binary cross entropy: {}'.format(val_score))
+                        # writer.add_scalar('Loss/val', val_score, global_step)
+                        train_log.info('Validation Area Under roc Curve(AUC): {}'.format(val_score))
+                        writer.add_scalar('AUC/val', val_score, global_step)
                     
                     writer.add_images('images/origin', imgs, global_step)
                     if module.n_classes == 1:
@@ -208,7 +210,7 @@ def train_net(net,
                         writer.add_images('categories/true', true_categories_img, global_step, dataformats='NHWC')
                         writer.add_images('categories/pred', categories_pred_img, global_step, dataformats='NHWC')
 
-                    if val_score < best_val_score:
+                    if val_score < best_val_score if module.n_classes > 1 else val_score > best_val_score:
                         best_val_score = val_score
                         if not os.path.exists(dir_checkpoint):
                             os.mkdir(dir_checkpoint)
@@ -231,7 +233,7 @@ def train_net(net,
     train_log.info('Train done! Eval best net and draw PR-curve...')
     net = create_net(device, load_model=os.path.join(dir_checkpoint, 'Net_best.pth'))
     PR_curve_img = eval_net(net, val_loader, device, final=True, PR_curve_save_dir=dir_checkpoint)
-    writer.add_images('PR-curve', np.array(Image.open(PR_curve_img)))
+    writer.add_images('PR-curve', np.array(Image.open(PR_curve_img)), dataformats='HWC')
 
     writer.close()
     return dir_checkpoint
