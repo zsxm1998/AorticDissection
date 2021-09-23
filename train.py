@@ -54,7 +54,8 @@ def create_net(device,
     net.to(device=device)
 
     if torch.cuda.device_count() > 1:
-        net = nn.DataParallel(net);
+        net = nn.DataParallel(net)
+        train_log.info(f'torch.cuda.device_count:{torch.cuda.device_count()}, Use nn.DataParallel')
 
     return net
 
@@ -70,7 +71,7 @@ def train_net(net,
               load_optim=False,
               load_scheduler=False,
               dir_checkpoint='checkpoints/',
-              dir_img='/nfs3-p1/zsxm/dataset/aorta_classify/'):
+              dir_img='/nfs3-p1/zsxm/dataset/aorta_classify_ct/'):
     
     if not os.path.exists(dir_checkpoint):
         os.mkdir(dir_checkpoint)
@@ -225,6 +226,13 @@ def train_net(net,
 
     torch.save(optimizer.state_dict(), dir_checkpoint + f'Optimizer.pth')
     torch.save(scheduler.state_dict(), dir_checkpoint + f'lrScheduler.pth')
+
+    # print PR-curve
+    train_log.info('Train done! Eval best net and draw PR-curve...')
+    net = create_net(device, load_model=os.path.join(dir_checkpoint, 'Net_best.pth'))
+    PR_curve_img = eval_net(net, val_loader, device, final=True, PR_curve_save_dir=dir_checkpoint)
+    writer.add_images('PR-curve', Image.open(PR_curve_img))
+
     writer.close()
     return dir_checkpoint
 

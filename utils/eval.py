@@ -1,12 +1,14 @@
+import os
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 from sklearn import metrics
+import matplotlib.pyplot as plt
 
 from .print_log import train_log
 
 
-def eval_net(net, val_loader, device):
+def eval_net(net, val_loader, device, final=False, PR_curve_save_dir=None):
     module = net.module if isinstance(net, torch.nn.DataParallel) else net
     net.eval()
     category_type = torch.float32 if module.n_classes == 1 else torch.long
@@ -40,6 +42,14 @@ def eval_net(net, val_loader, device):
     if module.n_classes > 1:
         return tot / n_val
     else:
+        if final:
+            precision, recall, thresholds = metrics.precision_recall_curve(true_list, pred_list)
+            plt.figure("P-R Curve")
+            plt.title('Precision/Recall Curve')
+            plt.xlabel('Recall')
+            plt.ylabel('Precision')
+            plt.plot(recall,precision)
+            plt.savefig(os.path.join(PR_curve_save_dir, 'PR-curve.png'))
         # print('Validation pred values:', pred_ori_list, '\nValidation true values:', true_list)
         train_log.info('\n'+metrics.classification_report(true_list, pred_list))
-        return tot / n_val
+        return tot / n_val if not final else os.path.join(PR_curve_save_dir, 'PR-curve.png')
