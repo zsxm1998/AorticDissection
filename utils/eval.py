@@ -43,7 +43,7 @@ def eval_net(net, val_loader, device, final=False, PR_curve_save_dir=None):
         return tot / n_val
     else:
         if final:
-            precision, recall, thresholds = metrics.precision_recall_curve(true_list, pred_list)
+            precision, recall, thresholds = metrics.precision_recall_curve(true_list, pred_ori_list)
             plt.figure("P-R Curve")
             plt.title('Precision/Recall Curve')
             plt.xlabel('Recall')
