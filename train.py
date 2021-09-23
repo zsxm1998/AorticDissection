@@ -231,7 +231,7 @@ def train_net(net,
     train_log.info('Train done! Eval best net and draw PR-curve...')
     net = create_net(device, load_model=os.path.join(dir_checkpoint, 'Net_best.pth'))
     PR_curve_img = eval_net(net, val_loader, device, final=True, PR_curve_save_dir=dir_checkpoint)
-    writer.add_images('PR-curve', Image.open(PR_curve_img))
+    writer.add_images('PR-curve', np.array(Image.open(PR_curve_img)))
 
     writer.close()
     return dir_checkpoint
@@ -252,6 +252,8 @@ def get_args():
                         help='Size of the images')
     parser.add_argument('-v', '--validation', dest='val', type=float, default=0.2,
                         help='Part of the data that is used as validation (0.0-1.0)')
+    parser.add_argument('-p', '--source', dest='source', type=str, default='./',
+                        help='Image source path')
 
     return parser.parse_args()
 
@@ -270,7 +272,8 @@ if __name__ == '__main__':
                   batch_size=args.batchsize,
                   lr=args.lr,
                   val_percent=args.val,
-                  img_size=args.size)
+                  img_size=args.size,
+                  dir_img=args.source)
     except KeyboardInterrupt:
         module = net.module if isinstance(net, nn.DataParallel) else net
         torch.save(net.state_dict(), f'checkpoints/{module.__class__.__name__}_INTERRUPTED.pth')

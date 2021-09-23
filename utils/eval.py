@@ -43,12 +43,16 @@ def eval_net(net, val_loader, device, final=False, PR_curve_save_dir=None):
         return tot / n_val
     else:
         if final:
-            precision, recall, thresholds = metrics.precision_recall_curve(true_list, pred_ori_list)
+            precision1, recall1, _ = metrics.precision_recall_curve(true_list, pred_ori_list)
+            precision0, recall0, _ = metrics.precision_recall_curve(list(map(lambda x: 1-x, true_list)), list(map(lambda x: 1-x, pred_ori_list)))
             plt.figure("P-R Curve")
             plt.title('Precision/Recall Curve')
             plt.xlabel('Recall')
             plt.ylabel('Precision')
-            plt.plot(recall,precision)
+            plt.plot(recall0,precision0, label='negative')
+            plt.plot(recall1,precision1, label='positive')
+            plt.ylim(bottom=0)
+            plt.legend(loc="lower left")
             plt.savefig(os.path.join(PR_curve_save_dir, 'PR-curve.png'))
         # print('Validation pred values:', pred_ori_list, '\nValidation true values:', true_list)
         train_log.info('\n'+metrics.classification_report(true_list, pred_list))
