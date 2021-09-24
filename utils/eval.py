@@ -40,7 +40,7 @@ def eval_net(net, val_loader, device, final=False, PR_curve_save_dir=None):
     
     net.train()
     if module.n_classes > 1:
-        return tot / n_val
+        return tot / n_val, tot / n_val
     else:
         if final:
             precision1, recall1, _ = metrics.precision_recall_curve(true_list, pred_ori_list)
@@ -56,4 +56,5 @@ def eval_net(net, val_loader, device, final=False, PR_curve_save_dir=None):
             plt.savefig(os.path.join(PR_curve_save_dir, 'PR-curve.png'))
         # print('Validation pred values:', pred_ori_list, '\nValidation true values:', true_list)
         train_log.info('\n'+metrics.classification_report(true_list, pred_list))
-        return metrics.roc_auc_score(true_list, pred_ori_list) if not final else os.path.join(PR_curve_save_dir, 'PR-curve.png') #return tot / n_val if not final else os.path.join(PR_curve_save_dir, 'PR-curve.png')
+        return ( metrics.roc_auc_score(true_list, pred_ori_list), tot / n_val ) if not final \
+            else ( metrics.roc_auc_score(true_list, pred_ori_list), tot / n_val, os.path.join(PR_curve_save_dir, 'PR-curve.png') ) #return tot / n_val if not final else os.path.join(PR_curve_save_dir, 'PR-curve.png')

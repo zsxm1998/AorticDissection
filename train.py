@@ -23,7 +23,7 @@ from utils.eval import eval_net
 from utils.print_log import train_log
 
 warnings.filterwarnings("ignore")
-os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 # cudnn.benchmark = True # faster convolutions, but more memory
 np.random.seed(63910)
 torch.manual_seed(53152)
@@ -41,6 +41,7 @@ def create_net(device,
     net.n_channels, net.n_classes = n_channels, n_classes
     net.conv1 = nn.Conv2d(n_channels, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
     net.fc = nn.Linear(in_features=512, out_features=n_classes, bias=True)
+    #net.fc = nn.Linear(in_features=2048, out_features=n_classes, bias=True)
 
     train_log.info('**********************************************************************\n'
                  f'Network: {net.__class__.__name__}\n'
@@ -182,7 +183,7 @@ def train_net(net,
                         tag = tag.replace('.', '/')
                         writer.add_histogram('weights/' + tag, value.data.cpu().numpy(), global_step)
                         writer.add_histogram('grads/' + tag, value.grad.data.cpu().numpy(), global_step)
-                    val_score = eval_net(net, val_loader, device)
+                    val_score, val_loss = eval_net(net, val_loader, device)
                     scheduler.step(val_score)
                     writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], global_step)
 
@@ -190,8 +191,8 @@ def train_net(net,
                         train_log.info('Validation cross entropy: {}'.format(val_score))
                         writer.add_scalar('Loss/val', val_score, global_step)
                     else:
-                        # train_log.info('Validation binary cross entropy: {}'.format(val_score))
-                        # writer.add_scalar('Loss/val', val_score, global_step)
+                        train_log.info('Validation binary cross entropy: {}'.format(val_loss))
+                        writer.add_scalar('Loss/val', val_loss, global_step)
                         train_log.info('Validation Area Under roc Curve(AUC): {}'.format(val_score))
                         writer.add_scalar('AUC/val', val_score, global_step)
                     
@@ -232,8 +233,10 @@ def train_net(net,
     # print PR-curve
     train_log.info('Train done! Eval best net and draw PR-curve...')
     net = create_net(device, load_model=os.path.join(dir_checkpoint, 'Net_best.pth'))
-    PR_curve_img = eval_net(net, val_loader, device, final=True, PR_curve_save_dir=dir_checkpoint)
+    val_score, val_loss, PR_curve_img = eval_net(net, val_loader, device, final=True, PR_curve_save_dir=dir_checkpoint)
     writer.add_images('PR-curve', np.array(Image.open(PR_curve_img)), dataformats='HWC')
+    train_log.info('Validation binary cross entropy: {}'.format(val_loss))
+    train_log.info('Validation Area Under roc Curve(AUC): {}'.format(val_score))
 
     writer.close()
     return dir_checkpoint
