@@ -78,6 +78,8 @@ def train_net(net,
         os.mkdir(dir_checkpoint)
     dir_checkpoint = os.path.join(dir_checkpoint, time.strftime("%m-%d_%H:%M:%S", time.localtime()) + '/')
 
+    writer = SummaryWriter(comment=f'_LR_{lr}_BS_{batch_size}_ImgSize_{img_size}')
+
     transform = T.Compose([
         T.Resize(img_size), # 缩放图片(Image)，保持长宽比不变，最短边为img_size像素
         T.CenterCrop(img_size), # 从图片中间切出img_size*img_size的图片
@@ -99,8 +101,6 @@ def train_net(net,
     n_val = len(val)
     train_loader = DataLoader(train, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
     val_loader = DataLoader(val, batch_size=batch_size, shuffle=False, num_workers=8, pin_memory=True, drop_last=False)
-
-    writer = SummaryWriter(comment=f'_LR_{lr}_BS_{batch_size}_ImgSize_{img_size}')
 
     train_log.info(f'''Starting training net:
         Epochs:          {epochs}
