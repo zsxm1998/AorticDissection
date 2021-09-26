@@ -111,6 +111,7 @@ def train_net(net,
         Checkpoints:     {save_cp}
         Device:          {device.type}
         Images size:     {img_size}
+        Image source:    {dir_img}
     ''')
 
     module = net.module if isinstance(net, nn.DataParallel) else net
