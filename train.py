@@ -63,7 +63,7 @@ def create_net(device,
 
 def train_net(net,
               device,
-              epochs=20,
+              epochs=50,
               batch_size=512,
               lr=0.0001,
               val_percent=0.2,
@@ -134,6 +134,7 @@ def train_net(net,
     #                           {'params':classifier_weight_list},
     #                           {'params':classifier_bias_list,'weight_decay':0}], lr=lr, weight_decay=1e-8, momentum=0.9)
     optimizer = optim.RMSprop(net.parameters(), lr=lr, weight_decay=1e-8, momentum=0.9)
+    #optimizer = optim.AdamW(net.parameters(), lr=lr)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min' if module.n_classes > 1 else 'max', patience=10, factor=0.1, cooldown=1, min_lr=1e-8, verbose=True)
     if load_optim:
         optimizer.load_state_dict(torch.load(load_optim, map_location=device))
@@ -246,7 +247,7 @@ def train_net(net,
 def get_args():
     parser = argparse.ArgumentParser(description='Train the Net on images and target masks',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-e', '--epochs', metavar='E', type=int, default=20,
+    parser.add_argument('-e', '--epochs', metavar='E', type=int, default=50,
                         help='Number of epochs', dest='epochs')
     parser.add_argument('-b', '--batch-size', metavar='B', type=int, nargs='?', default=512,
                         help='Batch size', dest='batchsize')
