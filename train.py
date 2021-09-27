@@ -34,7 +34,7 @@ torch.backends.cudnn.deterministic = True
 
 def create_net(device,
                n_channels=1,
-               n_classes=1,
+               n_classes=2,
                load_model=False):
     
     net = models.resnet34(pretrained=False)
@@ -64,7 +64,7 @@ def create_net(device,
 def train_net(net,
               device,
               epochs=50,
-              batch_size=512,
+              batch_size=128,
               lr=0.0001,
               val_percent=0.2,
               img_size=51,
@@ -249,7 +249,7 @@ def get_args():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-e', '--epochs', metavar='E', type=int, default=50,
                         help='Number of epochs', dest='epochs')
-    parser.add_argument('-b', '--batch-size', metavar='B', type=int, nargs='?', default=512,
+    parser.add_argument('-b', '--batch-size', metavar='B', type=int, nargs='?', default=128,
                         help='Batch size', dest='batchsize')
     parser.add_argument('-l', '--learning-rate', metavar='LR', type=float, nargs='?', default=0.0001,
                         help='Learning rate', dest='lr')
