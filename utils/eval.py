@@ -1,8 +1,9 @@
 import os
+import numpy as np
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
-from sklearn import metrics
+from sklearn import metrics, preprocessing
 import matplotlib.pyplot as plt
 
 from .print_log import train_log
@@ -27,6 +28,11 @@ def eval_net(net, val_loader, device, final=False, PR_curve_save_dir=None):
                 categories_pred = net(imgs)
 
             if module.n_classes > 1:
+                pred = torch.softmax(categories_pred, dim=1)
+                pred_ori_list += pred.tolist()
+                pred = pred.argmax(dim=1)
+                true_list += true_categories.tolist()
+                pred_list.extend(pred.tolist())
                 tot += F.cross_entropy(categories_pred, true_categories).item()
             else:
                 pred = torch.sigmoid(categories_pred)
@@ -40,7 +46,26 @@ def eval_net(net, val_loader, device, final=False, PR_curve_save_dir=None):
     
     net.train()
     if module.n_classes > 1:
-        return tot / n_val, tot / n_val
+        AP = []
+        if final:
+            plt.figure("P-R Curve")
+            plt.title('Precision/Recall Curve')
+            plt.xlabel('Recall')
+            plt.ylabel('Precision')
+        for c in range(module.n_classes):
+            c_true_list = [int(item==c) for item in true_list]
+            c_pred_ori_list = [item[c] for item in pred_ori_list]
+            AP.append(metrics.average_precision_score(c_true_list, c_pred_ori_list))
+            if final:
+                c_precision, c_recall, _ = metrics.precision_recall_curve(c_true_list, c_pred_ori_list)
+                plt.plot(c_recall, c_precision, label=f'class {c}')
+        if final:
+            plt.ylim(bottom=0)
+            plt.legend() #plt.legend(loc="lower left")
+            plt.savefig(os.path.join(PR_curve_save_dir, 'PR-curve.png'))
+        train_log.info('\n'+metrics.classification_report(true_list, pred_list))
+        return ( float(np.mean(AP)), tot / n_val ) if not final \
+            else ( float(np.mean(AP)), tot / n_val, os.path.join(PR_curve_save_dir, 'PR-curve.png') )
     else:
         if final:
             precision1, recall1, _ = metrics.precision_recall_curve(true_list, pred_ori_list)
@@ -49,12 +74,12 @@ def eval_net(net, val_loader, device, final=False, PR_curve_save_dir=None):
             plt.title('Precision/Recall Curve')
             plt.xlabel('Recall')
             plt.ylabel('Precision')
-            plt.plot(recall0,precision0, label='negative')
-            plt.plot(recall1,precision1, label='positive')
+            plt.plot(recall0, precision0, label='negative')
+            plt.plot(recall1, precision1, label='positive')
             plt.ylim(bottom=0)
-            plt.legend(loc="lower left")
+            plt.legend() #plt.legend(loc="lower left")
             plt.savefig(os.path.join(PR_curve_save_dir, 'PR-curve.png'))
         # print('Validation pred values:', pred_ori_list, '\nValidation true values:', true_list)
-        train_log.info('\n'+metrics.classification_report(true_list, pred_list))
+        train_log.info('\n'+metrics.classification_report(true_list, pred_list, target_names=['negative', 'positive']))
         return ( metrics.roc_auc_score(true_list, pred_ori_list), tot / n_val ) if not final \
             else ( metrics.roc_auc_score(true_list, pred_ori_list), tot / n_val, os.path.join(PR_curve_save_dir, 'PR-curve.png') ) #return tot / n_val if not final else os.path.join(PR_curve_save_dir, 'PR-curve.png')
