@@ -35,7 +35,7 @@ class AortaDataset3D(Dataset):
         return len(self.datas)
 
     def __getitem__(self, i):
-        label = torch.tensor(self.datas[i][1], dtype=torch.LongTensor)
+        label = torch.tensor(self.datas[i][1], dtype=torch.long)
         img_path_list = self.datas[i][0]
         img_list = []
         for img_path in img_path_list:

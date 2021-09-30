@@ -33,23 +33,27 @@ torch.cuda.manual_seed_all(7987)
 torch.backends.cudnn.deterministic = True
 
 
-
 def create_net(device,
                n_channels=1,
-               n_classes=2,
-               load_model=False):
+               n_classes=1,
+               load_model=False,
+               flag_3d=False):
     
-    # net = models.resnet34(pretrained=False)
-    # net.n_channels, net.n_classes = n_channels, n_classes
-    # net.conv1 = nn.Conv2d(n_channels, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
-    # net.fc = nn.Linear(in_features=512, out_features=n_classes, bias=True)
-    # #net.fc = nn.Linear(in_features=2048, out_features=n_classes, bias=True)
-    net = generate_model(34, n_channels=1, n_classes=1, conv1_t_size=3)
+    if flag_3d:
+        net = generate_model(34, n_channels=n_channels, n_classes=n_classes, conv1_t_size=3)
+    else:
+        net = models.resnet34(pretrained=False)
+        net.n_channels, net.n_classes = n_channels, n_classes
+        net.conv1 = nn.Conv2d(n_channels, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+        net.fc = nn.Linear(in_features=512, out_features=n_classes, bias=True)
+        #net.fc = nn.Linear(in_features=2048, out_features=n_classes, bias=True)
+    
 
     train_log.info('**********************************************************************\n'
                  f'Network: {net.__class__.__name__}\n'
                  f'\t{n_channels} input channels\n'
-                 f'\t{n_classes} output channels (classes)\n')
+                 f'\t{n_classes} output channels (classes)\n'
+                 f'\t3D model: {flag_3d}\n')
 
     if load_model:
         net.load_state_dict(torch.load(load_model, map_location=device))
@@ -75,7 +79,8 @@ def train_net(net,
               load_optim=False,
               load_scheduler=False,
               dir_checkpoint='checkpoints/',
-              dir_img='/nfs3-p1/zsxm/dataset/aorta_classify_ct/'):
+              dir_img='/nfs3-p1/zsxm/dataset/aorta_classify_ct/',
+              flag_3d=False):
     
     if not os.path.exists(dir_checkpoint):
         os.mkdir(dir_checkpoint)
@@ -208,7 +213,8 @@ def train_net(net,
                         train_log.info('Validation Area Under roc Curve(AUC): {}'.format(val_score))
                         writer.add_scalar('AUC/val', val_score, global_step)
                     
-                    writer.add_images('images/origin', imgs, global_step)
+                    if not flag_3d:
+                        writer.add_images('images/origin', imgs, global_step)
                     if module.n_classes == 1:
                         writer.add_images('categories/true', true_categories[:, None, None, None].repeat(1,1,100,100).float(), global_step)
                         writer.add_images('categories/pred', (torch.sigmoid(categories_pred)>0.5)[:, :, None, None].repeat(1,1,100,100), global_step)
@@ -275,6 +281,8 @@ def get_args():
                         help='Part of the data that is used as validation (0.0-1.0)')
     parser.add_argument('-p', '--source', dest='source', type=str, default='./',
                         help='Image source path')
+    parser.add_argument('-t', '--three-dimension', dest='flag_3d', type=bool, default=False,
+                        help='Whether use 3D model')
 
     return parser.parse_args()
 
@@ -285,7 +293,7 @@ if __name__ == '__main__':
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     train_log.info(f'Using device {device}')
 
-    net = create_net(device, load_model=args.load)
+    net = create_net(device, load_model=args.load, flag_3d=args.flag_3d)
     try:
         train_net(net,
                   device,
@@ -294,7 +302,8 @@ if __name__ == '__main__':
                   lr=args.lr,
                   val_percent=args.val,
                   img_size=args.size,
-                  dir_img=args.source)
+                  dir_img=args.source,
+                  flag_3d=args.flag_3d)
     except KeyboardInterrupt:
         module = net.module if isinstance(net, nn.DataParallel) else net
         torch.save(net.state_dict(), f'checkpoints/{module.__class__.__name__}_INTERRUPTED.pth')
