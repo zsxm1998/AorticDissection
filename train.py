@@ -91,12 +91,14 @@ def train_net(net,
         with open(path, 'rb') as f:
             return Image.open(f)
 
-    dataset = ImageFolder(dir_img, transform=transform, loader=lambda path: Image.open(path))
-    ss = StratifiedShuffleSplit(n_splits=1, test_size=val_percent, random_state=7888)
-    labels = [dataset[i][1] for i in range(len(dataset))]
-    train_idx, val_idx = list(ss.split(np.array(labels)[:,np.newaxis], labels))[0]
-    train = torch.utils.data.Subset(dataset, train_idx)
-    val = torch.utils.data.Subset(dataset, val_idx)
+    # dataset = ImageFolder(dir_img, transform=transform, loader=lambda path: Image.open(path))
+    # ss = StratifiedShuffleSplit(n_splits=1, test_size=val_percent, random_state=7888)
+    # labels = [dataset[i][1] for i in range(len(dataset))]
+    # train_idx, val_idx = list(ss.split(np.array(labels)[:,np.newaxis], labels))[0]
+    # train = torch.utils.data.Subset(dataset, train_idx)
+    # val = torch.utils.data.Subset(dataset, val_idx)
+    train = ImageFolder(os.path.join(dir_img, 'train'), transform=transform, loader=lambda path: Image.open(path))
+    val = ImageFolder(os.path.join(dir_img, 'val'), transform=transform, loader=lambda path: Image.open(path))
     n_train = len(train)
     n_val = len(val)
     train_loader = DataLoader(train, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
