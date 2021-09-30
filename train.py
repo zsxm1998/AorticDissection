@@ -25,7 +25,7 @@ from models.resnet3d import generate_model
 from utils.dataset import AortaDataset3D
 
 warnings.filterwarnings("ignore")
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
 # cudnn.benchmark = True # faster convolutions, but more memory
 np.random.seed(63910)
 torch.manual_seed(53152)
@@ -105,11 +105,13 @@ def train_net(net,
     # train_idx, val_idx = list(ss.split(np.array(labels)[:,np.newaxis], labels))[0]
     # train = torch.utils.data.Subset(dataset, train_idx)
     # val = torch.utils.data.Subset(dataset, val_idx)
-
-    # train = ImageFolder(os.path.join(dir_img, 'train'), transform=transform, loader=lambda path: Image.open(path))
-    # val = ImageFolder(os.path.join(dir_img, 'val'), transform=transform, loader=lambda path: Image.open(path))
-    train = AortaDataset3D(os.path.join(dir_img, 'train'), depth=7, transform=transform)
-    val = AortaDataset3D(os.path.join(dir_img, 'val'), depth=7, transform=transform)
+    if flag_3d:
+        train = AortaDataset3D(os.path.join(dir_img, 'train'), depth=7, transform=transform)
+        val = AortaDataset3D(os.path.join(dir_img, 'val'), depth=7, transform=transform)
+    else:
+        train = ImageFolder(os.path.join(dir_img, 'train'), transform=transform, loader=lambda path: Image.open(path))
+        val = ImageFolder(os.path.join(dir_img, 'val'), transform=transform, loader=lambda path: Image.open(path))
+    
     n_train = len(train)
     n_val = len(val)
     train_loader = DataLoader(train, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
@@ -250,7 +252,7 @@ def train_net(net,
 
     # print PR-curve
     train_log.info('Train done! Eval best net and draw PR-curve...')
-    net = create_net(device, load_model=os.path.join(dir_checkpoint, 'Net_best.pth'))
+    net = create_net(device, load_model=os.path.join(dir_checkpoint, 'Net_best.pth'), flag_3d=flag_3d)
     val_score, val_loss, PR_curve_img = eval_net(net, val_loader, device, final=True, PR_curve_save_dir=dir_checkpoint)
     writer.add_images('PR-curve', np.array(Image.open(PR_curve_img)), dataformats='HWC')
     if module.n_classes > 1:
