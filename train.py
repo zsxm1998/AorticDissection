@@ -21,6 +21,7 @@ from PIL import Image
 
 from utils.eval import eval_net
 from utils.print_log import train_log
+from models.resnet3d import generate_model
 
 warnings.filterwarnings("ignore")
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
@@ -37,11 +38,12 @@ def create_net(device,
                n_classes=2,
                load_model=False):
     
-    net = models.resnet34(pretrained=False)
-    net.n_channels, net.n_classes = n_channels, n_classes
-    net.conv1 = nn.Conv2d(n_channels, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
-    net.fc = nn.Linear(in_features=512, out_features=n_classes, bias=True)
-    #net.fc = nn.Linear(in_features=2048, out_features=n_classes, bias=True)
+    # net = models.resnet34(pretrained=False)
+    # net.n_channels, net.n_classes = n_channels, n_classes
+    # net.conv1 = nn.Conv2d(n_channels, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+    # net.fc = nn.Linear(in_features=512, out_features=n_classes, bias=True)
+    # #net.fc = nn.Linear(in_features=2048, out_features=n_classes, bias=True)
+    net = generate_model(34, n_input_channels=1, n_classes=1, conv1_t_size=3)
 
     train_log.info('**********************************************************************\n'
                  f'Network: {net.__class__.__name__}\n'

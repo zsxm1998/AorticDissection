@@ -105,21 +105,24 @@ class ResNet(nn.Module):
                  block,
                  layers,
                  block_inplanes,
-                 n_input_channels=3,
+                 n_channels=3,
+                 n_classes=400,
                  conv1_t_size=7,
                  conv1_t_stride=1,
                  no_max_pool=False,
                  shortcut_type='B',
-                 widen_factor=1.0,
-                 n_classes=400):
+                 widen_factor=1.0):
         super().__init__()
+
+        self.n_channels = n_channels
+        self.n_classes = n_classes
 
         block_inplanes = [int(x * widen_factor) for x in block_inplanes]
 
         self.in_planes = block_inplanes[0]
         self.no_max_pool = no_max_pool
 
-        self.conv1 = nn.Conv3d(n_input_channels,
+        self.conv1 = nn.Conv3d(n_channels,
                                self.in_planes,
                                kernel_size=(conv1_t_size, 7, 7),
                                stride=(conv1_t_stride, 2, 2),
