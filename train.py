@@ -22,6 +22,7 @@ from PIL import Image
 from utils.eval import eval_net
 from utils.print_log import train_log
 from models.resnet3d import generate_model
+from utils.dataset import AortaDataset3D
 
 warnings.filterwarnings("ignore")
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
@@ -43,7 +44,7 @@ def create_net(device,
     # net.conv1 = nn.Conv2d(n_channels, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
     # net.fc = nn.Linear(in_features=512, out_features=n_classes, bias=True)
     # #net.fc = nn.Linear(in_features=2048, out_features=n_classes, bias=True)
-    net = generate_model(34, n_input_channels=1, n_classes=1, conv1_t_size=3)
+    net = generate_model(34, n_channels=1, n_classes=1, conv1_t_size=3)
 
     train_log.info('**********************************************************************\n'
                  f'Network: {net.__class__.__name__}\n'
@@ -99,8 +100,11 @@ def train_net(net,
     # train_idx, val_idx = list(ss.split(np.array(labels)[:,np.newaxis], labels))[0]
     # train = torch.utils.data.Subset(dataset, train_idx)
     # val = torch.utils.data.Subset(dataset, val_idx)
-    train = ImageFolder(os.path.join(dir_img, 'train'), transform=transform, loader=lambda path: Image.open(path))
-    val = ImageFolder(os.path.join(dir_img, 'val'), transform=transform, loader=lambda path: Image.open(path))
+
+    # train = ImageFolder(os.path.join(dir_img, 'train'), transform=transform, loader=lambda path: Image.open(path))
+    # val = ImageFolder(os.path.join(dir_img, 'val'), transform=transform, loader=lambda path: Image.open(path))
+    train = AortaDataset3D(os.path.join(dir_img, 'train'), depth=7, transform=transform)
+    val = AortaDataset3D(os.path.join(dir_img, 'val'), depth=7, transform=transform)
     n_train = len(train)
     n_val = len(val)
     train_loader = DataLoader(train, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
