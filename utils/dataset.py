@@ -15,10 +15,10 @@ class AortaDataset3D(Dataset):
         self.img_dir = img_dir
         self.depth = depth
         self.transform = transform
-        self.labels = [label for label in listdir(img_dir) if isdir(join(img_dir, label))].sort()
+        self.labels = sorted([label for label in listdir(img_dir) if isdir(join(img_dir, label))])
         self.datas = []
         for i, label in enumerate(self.labels):
-            img_list =  list(filter(lambda x: not x.startswith('.') and isfile(join(img_dir, label, x)), listdir(join(img_dir, label)))).sort()
+            img_list = sorted(list(filter(lambda x: not x.startswith('.') and isfile(join(img_dir, label, x)), listdir(join(img_dir, label)))))
             il_len = len(img_list)
             for j in range(il_len):
                 if j + depth > il_len:
