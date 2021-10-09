@@ -106,8 +106,8 @@ def train_net(net,
     # train = torch.utils.data.Subset(dataset, train_idx)
     # val = torch.utils.data.Subset(dataset, val_idx)
     if flag_3d:
-        train = AortaDataset3D(os.path.join(dir_img, 'train'), depth=7, transform=transform)
-        val = AortaDataset3D(os.path.join(dir_img, 'val'), depth=7, transform=transform)
+        train = AortaDataset3D(os.path.join(dir_img, 'train'), depth=11, transform=transform)
+        val = AortaDataset3D(os.path.join(dir_img, 'val'), depth=11, transform=transform)
     else:
         train = ImageFolder(os.path.join(dir_img, 'train'), transform=transform, loader=lambda path: Image.open(path))
         val = ImageFolder(os.path.join(dir_img, 'val'), transform=transform, loader=lambda path: Image.open(path))
