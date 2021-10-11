@@ -25,7 +25,7 @@ from models.resnet3d import generate_model
 from utils.dataset import AortaDataset3D
 
 warnings.filterwarnings("ignore")
-os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '0,2'
 # cudnn.benchmark = True # faster convolutions, but more memory
 np.random.seed(63910)
 torch.manual_seed(53152)
@@ -80,7 +80,10 @@ def train_net(net,
               load_scheduler=False,
               dir_checkpoint='checkpoints/',
               dir_img='/nfs3-p1/zsxm/dataset/aorta_classify_ct/',
-              flag_3d=False):
+              flag_3d=False,
+              depth_3d=7,
+              step_3d=1,
+              info=''):
     
     if not os.path.exists(dir_checkpoint):
         os.mkdir(dir_checkpoint)
@@ -106,8 +109,8 @@ def train_net(net,
     # train = torch.utils.data.Subset(dataset, train_idx)
     # val = torch.utils.data.Subset(dataset, val_idx)
     if flag_3d:
-        train = AortaDataset3D(os.path.join(dir_img, 'train'), depth=11, transform=transform)
-        val = AortaDataset3D(os.path.join(dir_img, 'val'), depth=11, transform=transform)
+        train = AortaDataset3D(os.path.join(dir_img, 'train'), transform=transform, depth=depth_3d, step=step_3d)
+        val = AortaDataset3D(os.path.join(dir_img, 'val'), transform=transform, depth=depth_3d, step=step_3d)
     else:
         train = ImageFolder(os.path.join(dir_img, 'train'), transform=transform, loader=lambda path: Image.open(path))
         val = ImageFolder(os.path.join(dir_img, 'val'), transform=transform, loader=lambda path: Image.open(path))
@@ -127,6 +130,7 @@ def train_net(net,
         Device:          {device.type}
         Images size:     {img_size}
         Image source:    {dir_img}
+        Training info:   {info}
     ''')
 
     module = net.module if isinstance(net, nn.DataParallel) else net
@@ -285,6 +289,12 @@ def get_args():
                         help='Image source path')
     parser.add_argument('-t', '--three-dimension', dest='flag_3d', type=bool, default=False,
                         help='Whether use 3D model')
+    parser.add_argument('-dp', '--depth', dest='depth_3d', type=int, default=7,
+                        help='Depth of the 3D images')
+    parser.add_argument('-st', '--step', dest='step_3d', type=int, default=1,
+                        help='Step of the 3D images')
+    parser.add_argument('-i', '--info', dest='info', type=str, default='',
+                        help='Training information')
 
     return parser.parse_args()
 
@@ -305,7 +315,10 @@ if __name__ == '__main__':
                   val_percent=args.val,
                   img_size=args.size,
                   dir_img=args.source,
-                  flag_3d=args.flag_3d)
+                  flag_3d=args.flag_3d,
+                  depth_3d=args.depth_3d,
+                  step_3d=args.step_3d,
+                  info=args.info)
     except KeyboardInterrupt:
         module = net.module if isinstance(net, nn.DataParallel) else net
         torch.save(net.state_dict(), f'checkpoints/{module.__class__.__name__}_INTERRUPTED.pth')
