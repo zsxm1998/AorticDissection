@@ -83,6 +83,7 @@ def train_net(net,
               flag_3d=False,
               depth_3d=7,
               step_3d=1,
+              residual_3d=False,
               info=''):
     
     if not os.path.exists(dir_checkpoint):
@@ -109,8 +110,8 @@ def train_net(net,
     # train = torch.utils.data.Subset(dataset, train_idx)
     # val = torch.utils.data.Subset(dataset, val_idx)
     if flag_3d:
-        train = AortaDataset3D(os.path.join(dir_img, 'train'), transform=transform, depth=depth_3d, step=step_3d)
-        val = AortaDataset3D(os.path.join(dir_img, 'val'), transform=transform, depth=depth_3d, step=step_3d)
+        train = AortaDataset3D(os.path.join(dir_img, 'train'), transform=transform, depth=depth_3d, step=step_3d, residual=residual_3d)
+        val = AortaDataset3D(os.path.join(dir_img, 'val'), transform=transform, depth=depth_3d, step=step_3d, residual=residual_3d)
     else:
         train = ImageFolder(os.path.join(dir_img, 'train'), transform=transform, loader=lambda path: Image.open(path))
         val = ImageFolder(os.path.join(dir_img, 'val'), transform=transform, loader=lambda path: Image.open(path))
@@ -293,6 +294,8 @@ def get_args():
                         help='Depth of the 3D images')
     parser.add_argument('-st', '--step', dest='step_3d', type=int, default=1,
                         help='Step of the 3D images')
+    parser.add_argument('-res', '--residual', dest='residual_3d', type=bool, default=False,
+                        help='Residual of the 3D images')
     parser.add_argument('-i', '--info', dest='info', type=str, default='',
                         help='Training information')
 
@@ -318,6 +321,7 @@ if __name__ == '__main__':
                   flag_3d=args.flag_3d,
                   depth_3d=args.depth_3d,
                   step_3d=args.step_3d,
+                  residual_3d = args.residual_3d,
                   info=args.info)
     except KeyboardInterrupt:
         module = net.module if isinstance(net, nn.DataParallel) else net

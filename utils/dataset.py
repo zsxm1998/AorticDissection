@@ -11,11 +11,12 @@ from PIL import Image
 from .print_log import train_log
 
 class AortaDataset3D(Dataset):
-    def __init__(self, img_dir, transform, depth, step=1):
+    def __init__(self, img_dir, transform, depth, step=1, residual=False):
         self.img_dir = img_dir
         self.transform = transform
         self.depth = depth
         self.step = step
+        self.residual = residual
         self.labels = sorted([label for label in listdir(img_dir) if isdir(join(img_dir, label))])
         self.datas = []
         for i, label in enumerate(self.labels):
@@ -54,7 +55,12 @@ class AortaDataset3D(Dataset):
         img_list = []
         for img_path in img_path_list:
             img = Image.open(img_path)
-            img_list.append(self.transform(img))
+            img = self.transform(img)
+            if self.residual and img_list:
+                res = img - img_list[-1]
+                res = (res + 1) / 2
+                img_list.append(img - img_list[-1])
+            img_list.append(img)
         imgs = torch.stack(img_list, dim=1)
         return imgs, label
             
