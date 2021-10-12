@@ -170,7 +170,6 @@ def train_net(net,
     best_val_score = -1 #float('inf') if module.n_classes > 1 else -1
     for epoch in range(epochs):
         net.train()
-
         epoch_loss = 0
         with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
             for imgs, true_categories in train_loader:
@@ -200,51 +199,52 @@ def train_net(net,
                 optimizer.step()
 
                 pbar.update(imgs.shape[0])
-                if global_step % (n_train // (2 * batch_size)) == 0:
-                    for tag, value in net.named_parameters():
-                        tag = tag.replace('.', '/')
-                        writer.add_histogram('weights/' + tag, value.data.cpu().numpy(), global_step)
-                        writer.add_histogram('grads/' + tag, value.grad.data.cpu().numpy(), global_step)
-                    val_score, val_loss = eval_net(net, val_loader, device)
-                    scheduler.step(val_score)
-                    writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], global_step)
-
-                    if module.n_classes > 1:
-                        train_log.info('Validation cross entropy: {}'.format(val_loss))
-                        writer.add_scalar('Loss/val', val_loss, global_step)
-                        train_log.info('Validation mean Average Precision(mAP): {}'.format(val_score))
-                        writer.add_scalar('mAP/val', val_score, global_step)
-                    else:
-                        train_log.info('Validation binary cross entropy: {}'.format(val_loss))
-                        writer.add_scalar('Loss/val', val_loss, global_step)
-                        train_log.info('Validation Area Under roc Curve(AUC): {}'.format(val_score))
-                        writer.add_scalar('AUC/val', val_score, global_step)
-                    
-                    if not flag_3d:
-                        writer.add_images('images/origin', imgs, global_step)
-                    if module.n_classes == 1:
-                        writer.add_images('categories/true', true_categories[:, None, None, None].repeat(1,1,100,100).float(), global_step)
-                        writer.add_images('categories/pred', (torch.sigmoid(categories_pred)>0.5)[:, :, None, None].repeat(1,1,100,100), global_step)
-                    else:
-                        color_list = [torch.ByteTensor([0,0,0]), torch.ByteTensor([255,0,0]), torch.ByteTensor([0,255,0])]
-                        true_categories_img = torch.zeros(true_categories.shape[0], 100, 100, 3, dtype = torch.uint8)
-                        categories_pred_img = torch.zeros(categories_pred.shape[0], 100, 100, 3, dtype = torch.uint8)
-                        categories_pred_idx = categories_pred.argmax(dim=1)
-                        for category in range(1, module.n_classes):
-                            true_categories_img[true_categories==category] = color_list[category]
-                            categories_pred_img[categories_pred_idx==category] = color_list[category]
-                        writer.add_images('categories/true', true_categories_img, global_step, dataformats='NHWC')
-                        writer.add_images('categories/pred', categories_pred_img, global_step, dataformats='NHWC')
-
-                    if val_score > best_val_score: #val_score < best_val_score if module.n_classes > 1 else val_score > best_val_score:
-                        best_val_score = val_score
-                        if not os.path.exists(dir_checkpoint):
-                            os.mkdir(dir_checkpoint)
-                            train_log.info('Created checkpoint directory')
-                        torch.save(module.state_dict(), dir_checkpoint + 'Net_best.pth')
-                        train_log.info('Best model saved !')
 
         train_log.info('Train epoch {} loss: {}'.format(epoch + 1, epoch_loss / n_train))
+
+        for tag, value in net.named_parameters():
+            tag = tag.replace('.', '/')
+            writer.add_histogram('weights/' + tag, value.data.cpu().numpy(), global_step)
+            writer.add_histogram('grads/' + tag, value.grad.data.cpu().numpy(), global_step)
+        val_score, val_loss = eval_net(net, val_loader, device)
+        scheduler.step(val_score)
+        writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], global_step)
+
+        if module.n_classes > 1:
+            train_log.info('Validation cross entropy: {}'.format(val_loss))
+            writer.add_scalar('Loss/val', val_loss, global_step)
+            train_log.info('Validation mean Average Precision(mAP): {}'.format(val_score))
+            writer.add_scalar('mAP/val', val_score, global_step)
+        else:
+            train_log.info('Validation binary cross entropy: {}'.format(val_loss))
+            writer.add_scalar('Loss/val', val_loss, global_step)
+            train_log.info('Validation Area Under roc Curve(AUC): {}'.format(val_score))
+            writer.add_scalar('AUC/val', val_score, global_step)
+        
+        if not flag_3d:
+            writer.add_images('images/origin', imgs, global_step)
+        if module.n_classes == 1:
+            writer.add_images('categories/true', true_categories[:, None, None, None].repeat(1,1,100,100).float(), global_step)
+            writer.add_images('categories/pred', (torch.sigmoid(categories_pred)>0.5)[:, :, None, None].repeat(1,1,100,100), global_step)
+        else:
+            color_list = [torch.ByteTensor([0,0,0]), torch.ByteTensor([255,0,0]), torch.ByteTensor([0,255,0])]
+            true_categories_img = torch.zeros(true_categories.shape[0], 100, 100, 3, dtype = torch.uint8)
+            categories_pred_img = torch.zeros(categories_pred.shape[0], 100, 100, 3, dtype = torch.uint8)
+            categories_pred_idx = categories_pred.argmax(dim=1)
+            for category in range(1, module.n_classes):
+                true_categories_img[true_categories==category] = color_list[category]
+                categories_pred_img[categories_pred_idx==category] = color_list[category]
+            writer.add_images('categories/true', true_categories_img, global_step, dataformats='NHWC')
+            writer.add_images('categories/pred', categories_pred_img, global_step, dataformats='NHWC')
+
+        if val_score > best_val_score: #val_score < best_val_score if module.n_classes > 1 else val_score > best_val_score:
+            best_val_score = val_score
+            if not os.path.exists(dir_checkpoint):
+                os.mkdir(dir_checkpoint)
+                train_log.info('Created checkpoint directory')
+            torch.save(module.state_dict(), dir_checkpoint + 'Net_best.pth')
+            train_log.info('Best model saved !')
+        
         if save_cp:
             if not os.path.exists(dir_checkpoint):
                 os.mkdir(dir_checkpoint)
@@ -294,7 +294,7 @@ def get_args():
                         help='Depth of the 3D images')
     parser.add_argument('-st', '--step', dest='step_3d', type=int, default=1,
                         help='Step of the 3D images')
-    parser.add_argument('-res', '--residual', dest='residual_3d', type=bool, default=False,
+    parser.add_argument('-res', '--residual', dest='residual_3d', action='store_true',
                         help='Residual of the 3D images')
     parser.add_argument('-i', '--info', dest='info', type=str, default='',
                         help='Training information')
