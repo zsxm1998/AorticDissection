@@ -205,7 +205,7 @@ def train_net(net,
             tag = tag.replace('.', '/')
             writer.add_histogram('weights/' + tag, value.data.cpu().numpy(), global_step)
             writer.add_histogram('grads/' + tag, value.grad.data.cpu().numpy(), global_step)
-        val_score, val_loss = eval_net(net, val_loader, device)
+        val_score, val_loss = eval_net(net, val_loader, n_val, device)
         scheduler.step(val_score)
         writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], global_step)
 
@@ -257,7 +257,7 @@ def train_net(net,
     # print PR-curve
     train_log.info('Train done! Eval best net and draw PR-curve...')
     net = create_net(device, load_model=os.path.join(dir_checkpoint, 'Net_best.pth'), flag_3d=flag_3d)
-    val_score, val_loss, PR_curve_img = eval_net(net, val_loader, device, final=True, PR_curve_save_dir=dir_checkpoint)
+    val_score, val_loss, PR_curve_img = eval_net(net, val_loader, n_val, device, final=True, PR_curve_save_dir=dir_checkpoint)
     writer.add_images('PR-curve', np.array(Image.open(PR_curve_img)), dataformats='HWC')
     if module.n_classes > 1:
         train_log.info('Validation cross entropy: {}'.format(val_loss))

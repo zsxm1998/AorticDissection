@@ -9,40 +9,38 @@ import matplotlib.pyplot as plt
 from .print_log import train_log
 
 
-def eval_net(net, val_loader, device, final=False, PR_curve_save_dir=None):
+def eval_net(net, val_loader, n_val, device, final=False, PR_curve_save_dir=None):
     module = net.module if isinstance(net, torch.nn.DataParallel) else net
     net.eval()
     category_type = torch.float32 if module.n_classes == 1 else torch.long
-    n_val = len(val_loader)  # the number of batch
-    tot = 0
+    num_val_batches = len(val_loader)  # the number of batch
+    tot_loss = 0
 
     true_list = []
     pred_list = []
     pred_ori_list = []
-    with tqdm(total=n_val, desc='Validation round', unit='batch', leave=False) as pbar:
-        for imgs, true_categories in val_loader:
-            imgs = imgs.to(device=device, dtype=torch.float32)
-            true_categories = true_categories.to(device=device, dtype=category_type)
+    for imgs, true_categories in tqdm(val_loader, total=num_val_batches, desc='Validation round', unit='batch', leave=False):
+        imgs = imgs.to(device=device, dtype=torch.float32)
+        true_categories = true_categories.to(device=device, dtype=category_type)
 
-            with torch.no_grad():
-                categories_pred = net(imgs)
+        with torch.no_grad():
+            categories_pred = net(imgs)
 
-            if module.n_classes > 1:
-                pred = torch.softmax(categories_pred, dim=1)
-                pred_ori_list += pred.tolist()
-                pred = pred.argmax(dim=1)
-                true_list += true_categories.tolist()
-                pred_list.extend(pred.tolist())
-                tot += F.cross_entropy(categories_pred, true_categories).item()
-            else:
-                pred = torch.sigmoid(categories_pred)
-                pred_ori_list += pred.squeeze(1).tolist()
-                pred = (pred > 0.5).float()
-                # tot += metrics.f1_score(true_categories.cpu().numpy(), pred.squeeze(-1).cpu().numpy())
-                true_list += true_categories.tolist()
-                pred_list.extend(pred.squeeze(-1).tolist())
-                tot += F.binary_cross_entropy_with_logits(categories_pred, true_categories.unsqueeze(1)).item()
-            pbar.update()
+        if module.n_classes > 1:
+            pred = torch.softmax(categories_pred, dim=1)
+            pred_ori_list += pred.tolist()
+            pred = pred.argmax(dim=1)
+            true_list += true_categories.tolist()
+            pred_list.extend(pred.tolist())
+            tot_loss += F.cross_entropy(categories_pred, true_categories, reduction='sum').item()
+        else:
+            pred = torch.sigmoid(categories_pred)
+            pred_ori_list += pred.squeeze(1).tolist()
+            pred = (pred > 0.5).float()
+            # tot += metrics.f1_score(true_categories.cpu().numpy(), pred.squeeze(-1).cpu().numpy())
+            true_list += true_categories.tolist()
+            pred_list.extend(pred.squeeze(-1).tolist())
+            tot_loss += F.binary_cross_entropy_with_logits(categories_pred, true_categories.unsqueeze(1), reduction='sum').item()
     
     net.train()
     if module.n_classes > 1:
@@ -64,8 +62,8 @@ def eval_net(net, val_loader, device, final=False, PR_curve_save_dir=None):
             plt.legend() #plt.legend(loc="lower left")
             plt.savefig(os.path.join(PR_curve_save_dir, 'PR-curve.png'))
         train_log.info('\n'+metrics.classification_report(true_list, pred_list))
-        return ( float(np.mean(AP)), tot / n_val ) if not final \
-            else ( float(np.mean(AP)), tot / n_val, os.path.join(PR_curve_save_dir, 'PR-curve.png') )
+        return ( float(np.mean(AP)), tot_loss / n_val ) if not final \
+            else ( float(np.mean(AP)), tot_loss / n_val, os.path.join(PR_curve_save_dir, 'PR-curve.png') )
     else:
         if final:
             precision1, recall1, _ = metrics.precision_recall_curve(true_list, pred_ori_list)
@@ -81,5 +79,5 @@ def eval_net(net, val_loader, device, final=False, PR_curve_save_dir=None):
             plt.savefig(os.path.join(PR_curve_save_dir, 'PR-curve.png'))
         # print('Validation pred values:', pred_ori_list, '\nValidation true values:', true_list)
         train_log.info('\n'+metrics.classification_report(true_list, pred_list, target_names=['negative', 'positive']))
-        return ( metrics.roc_auc_score(true_list, pred_ori_list), tot / n_val ) if not final \
-            else ( metrics.roc_auc_score(true_list, pred_ori_list), tot / n_val, os.path.join(PR_curve_save_dir, 'PR-curve.png') ) #return tot / n_val if not final else os.path.join(PR_curve_save_dir, 'PR-curve.png')
+        return ( metrics.roc_auc_score(true_list, pred_ori_list), tot_loss / n_val ) if not final \
+            else ( metrics.roc_auc_score(true_list, pred_ori_list), tot_loss / n_val, os.path.join(PR_curve_save_dir, 'PR-curve.png') ) #return tot / n_val if not final else os.path.join(PR_curve_save_dir, 'PR-curve.png')
