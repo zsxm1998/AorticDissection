@@ -1,5 +1,4 @@
 import argparse
-import logging
 import os
 import sys
 import warnings
@@ -22,7 +21,7 @@ from PIL import Image
 from utils.eval import eval_net
 from utils.print_log import train_log
 from models.resnet3d import generate_model
-from utils.dataset import AortaDataset3D
+from utils.datasets import AortaDataset3D
 
 warnings.filterwarnings("ignore")
 os.environ['CUDA_VISIBLE_DEVICES'] = '0,2'
@@ -272,7 +271,7 @@ def train_net(net,
 
 
 def get_args():
-    parser = argparse.ArgumentParser(description='Train the Net on images and target masks',
+    parser = argparse.ArgumentParser(description='Train the Net on images and labels',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-e', '--epochs', metavar='E', type=int, default=50,
                         help='Number of epochs', dest='epochs')
