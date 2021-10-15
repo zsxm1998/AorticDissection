@@ -1,4 +1,5 @@
 import os
+import logging
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -6,10 +7,9 @@ from tqdm import tqdm
 from sklearn import metrics, preprocessing
 import matplotlib.pyplot as plt
 
-from .print_log import train_log
-
 
 def eval_net(net, val_loader, n_val, device, final=False, PR_curve_save_dir=None):
+    train_log = logging.getLogger('train_log')
     module = net.module if isinstance(net, torch.nn.DataParallel) else net
     net.eval()
     category_type = torch.float32 if module.n_classes == 1 else torch.long
@@ -61,7 +61,7 @@ def eval_net(net, val_loader, n_val, device, final=False, PR_curve_save_dir=None
             plt.ylim(bottom=0)
             plt.legend() #plt.legend(loc="lower left")
             plt.savefig(os.path.join(PR_curve_save_dir, 'PR-curve.png'))
-        train_log.info('\n'+metrics.classification_report(true_list, pred_list))
+        train_log.info('\n'+metrics.classification_report(true_list, pred_list, digits=4))
         return ( float(np.mean(AP)), tot_loss / n_val ) if not final \
             else ( float(np.mean(AP)), tot_loss / n_val, os.path.join(PR_curve_save_dir, 'PR-curve.png') )
     else:
@@ -78,6 +78,6 @@ def eval_net(net, val_loader, n_val, device, final=False, PR_curve_save_dir=None
             plt.legend() #plt.legend(loc="lower left")
             plt.savefig(os.path.join(PR_curve_save_dir, 'PR-curve.png'))
         # print('Validation pred values:', pred_ori_list, '\nValidation true values:', true_list)
-        train_log.info('\n'+metrics.classification_report(true_list, pred_list, target_names=['negative', 'positive']))
+        train_log.info('\n'+metrics.classification_report(true_list, pred_list, target_names=['negative', 'positive'], digits=4))
         return ( metrics.roc_auc_score(true_list, pred_ori_list), tot_loss / n_val ) if not final \
             else ( metrics.roc_auc_score(true_list, pred_ori_list), tot_loss / n_val, os.path.join(PR_curve_save_dir, 'PR-curve.png') ) #return tot / n_val if not final else os.path.join(PR_curve_save_dir, 'PR-curve.png')

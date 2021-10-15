@@ -125,7 +125,7 @@ def run_yolo_detect(weights,  # model.pt path(s)
                         annotator.box_label(xyxy, label, color=colors(c, True))
 
             # Print time (inference + NMS)
-            print(f'{s}Done. ({t2 - t1:.3f}s)')
+            #print(f'{s}Done. ({t2 - t1:.3f}s)')
 
             # Save results (image with detections)
             if save_img:
@@ -133,9 +133,9 @@ def run_yolo_detect(weights,  # model.pt path(s)
                 cv2.imwrite(pred_path, im0)
 
     s = f"\n{len(list(label_dir.glob('*.txt')))} labels saved to {label_dir}" if save_txt else ''
-    print(f"Results saved to {colorstr('bold', pred_dir)}{s}")
+    #print(f"Results saved to {colorstr('bold', pred_dir)}{s}")
 
-    print(f'Done. ({time.time() - t0:.3f}s)')
+    #print(f'Done. ({time.time() - t0:.3f}s)')
     return str(label_dir)
 
 

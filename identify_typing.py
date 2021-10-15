@@ -3,6 +3,7 @@ import re
 import glob
 import shutil
 import argparse
+import sys
 import traceback
 from math import sqrt
 
@@ -14,31 +15,23 @@ from PIL import Image
 from torch.utils.data import DataLoader
 import torchvision.models as models
 from torchvision import transforms as T
+from tqdm import tqdm
 
 from yolov5_detect import run_yolo_detect
 from models.resnet3d import generate_model
-from utils.datasets import AortaTest
+from utils.datasets import AortaTest, AortaTest3D
 
 PAD_NUM = 4
+POSITIVE_THRESHOLD = 3
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 
+
 def load_scan(path):
-    slices = [] #slices = [pydicom.dcmread(path + '/' + s) for s in filter(lambda x: x.endswith('.dcm'), os.listdir(path))]
-    for s in os.listdir(path):
-        if not s.endswith('.dcm'):
-            continue
-        sl = pydicom.dcmread(os.path.join(path, s))
-        try:
-            sl_p = sl.pixel_array
-        except:
-            traceback.print_exc()
-            print(f'\tDelete {os.path.join(path, s)}')
-            os.remove(os.path.join(path, s))
-        else:
-            slices.append(sl)
+    slices = [pydicom.dcmread(path + '/' + s) for s in filter(lambda x: x.endswith('.dcm'), os.listdir(path))]
     slices.sort(key=lambda x: float(x.InstanceNumber))
     return slices
+
 
 def generate_image(patient_folder, ww, wl):
     lower_b, upper_b = int(wl - ww // 2), int(wl + ww // 2)
@@ -62,6 +55,7 @@ def generate_image(patient_folder, ww, wl):
         img = Image.fromarray(img)
         img.save(os.path.join(image_path, f'{name}_{i:04d}.png'))
     return image_path
+
 
 def find_branch(label_path):
     label_file_list = sorted(glob.glob(os.path.join(label_path, '*.txt')))
@@ -125,11 +119,13 @@ def find_branch(label_path):
             branch_end = tail-PAD_NUM+1 if tail <= max_idx else tail
     return branch_start, branch_end, label_dict, min_idx, max_idx
 
+
 def calc_coordinate(height, width, label):
     x, y, w, h = label[0], label[1], label[2], label[3]
     w, h = int(width*w), int(height*h)
     w, h = max(w, h), max(w, h)
     return int(width*x-w/2), int(height*y-h/2), int(width*x+w/2+1), int(height*y+h/2+1)
+
 
 def crop_image(image_path, branch_start, branch_end, label_dict, max_idx):
     base_path = os.path.dirname(image_path)
@@ -221,6 +217,7 @@ def crop_image(image_path, branch_start, branch_end, label_dict, max_idx):
 
     return j_path, s_path
 
+
 def create_net(device,
                n_channels=1,
                n_classes=1,
@@ -238,13 +235,54 @@ def create_net(device,
     if load_model:
         net.load_state_dict(torch.load(load_model, map_location=device))
     net.to(device=device)
+    net.eval()
     return net
 
-def aorta_classify(model, aorta_path, transform):
-    dateset = AortaTest(aorta_path, transform)
+
+@torch.no_grad()
+def aorta_classify(model, device, aorta_path, transform, flag_3d=False):
+    if flag_3d:
+        dateset = AortaTest3D(aorta_path, transform, depth=11, step=3)
+    else:
+        dateset = AortaTest(aorta_path, transform)
     dataloader = DataLoader(dateset, batch_size=128, shuffle=False, num_workers=8, pin_memory=True, drop_last=False)
     n_data = len(dateset)
+    pred_ori_list = []
+    pred_list = []
 
+    with tqdm(total=n_data, desc=aorta_path, unit='img') as pbar:
+        for imgs in dataloader:
+            assert imgs.shape[1] == model.n_channels, \
+                f'Network has been defined with {model.n_channels} input channels, ' \
+                f'but loaded images have {imgs.shape[1]} channels. Please check that ' \
+                'the images are loaded correctly.'
+            imgs = imgs.to(device=device, dtype=torch.float32)
+
+            categories_pred = model(imgs)
+
+            if model.n_classes > 1:
+                pred = torch.softmax(categories_pred, dim=1)
+                pred_ori_list += pred.tolist()
+                pred = pred.argmax(dim=1)
+                pred_list.extend(pred.tolist())
+            else:
+                pred = torch.sigmoid(categories_pred)
+                pred_ori_list += pred.squeeze(1).tolist()
+                pred = (pred > 0.5).float()
+                pred_list.extend(pred.squeeze(-1).tolist())
+
+            pbar.update(imgs.shape[0])
+
+    print(f"{aorta_path}:", pred_list)
+    positive_count = 0
+    for res in pred_list:
+        if res == 1:
+            positive_count += 1
+            if positive_count == POSITIVE_THRESHOLD:
+                return True
+        else:
+            positive_count = 0
+    return False
 
 
 def delete_temp_dir(image_path):
@@ -255,6 +293,8 @@ def delete_temp_dir(image_path):
         shutil.rmtree(os.path.join(parents_path, 'labels'))
     if os.path.exists(os.path.join(parents_path, 'pred_images')):
         shutil.rmtree(os.path.join(parents_path, 'pred_images'))
+    if os.path.exists(os.path.join(parents_path, 'crops')):
+        shutil.rmtree(os.path.join(parents_path, 'crops'))
 
 
 def main(source,
@@ -262,9 +302,10 @@ def main(source,
          resnet_weight,
          window_width=600,
          window_level=200,
+         flag_3d = True
          ):
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    model = create_net(device, load_model=resnet_weight)
+    model = create_net(device, load_model=resnet_weight, flag_3d=flag_3d)
     transform = T.Compose([
         T.Resize(51), # 缩放图片(Image)，保持长宽比不变，最短边为img_size像素
         T.CenterCrop(51), # 从图片中间切出img_size*img_size的图片
@@ -274,21 +315,43 @@ def main(source,
     source_list = []
     for fp in os.listdir(source):
         if os.path.isdir(os.path.join(source, fp)):
-            source_list.append(os.path.join(source, fp))
+            source_list.append(os.path.join(source, fp, '1'))
         elif fp.endswith('.dcm'):
             source_list = [source]
             break
     
+    result_list = []
     for patient in source_list:
-        image_path = generate_image(patient, window_width, window_level)
-        label_path = run_yolo_detect(yolo_weight, image_path, imgsz=256, max_det=2, save_img=True)
-        branch_start, branch_end, label_dict, min_idx, max_idx = find_branch(label_path)
-        print(f'branch_start: {branch_start}, branch_end: {branch_end}')
-        j_path, s_path = crop_image(image_path, branch_start, branch_end, label_dict, max_idx)
-        j_res = aorta_classify(model, j_path, transform)
-        s_res = aorta_classify(model, s_path, transform)
+        try:
+            image_path = generate_image(patient, window_width, window_level)
+            label_path = run_yolo_detect(yolo_weight, image_path, imgsz=256, max_det=2, save_img=True)
+            branch_start, branch_end, label_dict, min_idx, max_idx = find_branch(label_path)
+            print(f'branch_start: {branch_start}, branch_end: {branch_end}')
+            j_path, s_path = crop_image(image_path, branch_start, branch_end, label_dict, max_idx)
+            j_res = aorta_classify(model, device, j_path, transform, flag_3d=flag_3d)
+            s_res = aorta_classify(model, device, s_path, transform, flag_3d=flag_3d)
+            if s_res == True:
+                print(f'{patient}分型: A')
+                result_list.append('A')
+            elif j_res == True:
+                print(f'{patient}分型: B')
+                result_list.append('B')
+            else:
+                print(f'{patient}分型: 阴性')
+                result_list.append('N')
+        except KeyboardInterrupt:
+            delete_temp_dir(image_path)
+            try:
+                sys.exit(0)
+            except SystemExit:
+                os._exit(0)
+        except:
+            traceback.print_exc()
+        finally:
+            delete_temp_dir(image_path)
+    print(result_list)
+    print(list(zip(source_list, result_list)))
         
-
 
 def get_args():
     parser = argparse.ArgumentParser(description='Identify typing of aorta dissection',
@@ -300,6 +363,7 @@ def get_args():
     parser.add_argument('-rw', '--resnet_weight', type=str, required=True, help='Resnet34 weight for classification')
 
     return parser.parse_args()
+
 
 if __name__ == '__main__':
     args = get_args()

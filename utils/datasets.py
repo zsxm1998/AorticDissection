@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 from os import listdir
 from os.path import join, isdir, isfile
+import logging
 
 import cv2
 import numpy as np
@@ -17,7 +18,6 @@ from PIL import Image
 from torch.utils.data import Dataset
 
 from utils.augmentations import letterbox
-from .print_log import train_log
 
 # Parameters
 HELP_URL = 'https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
@@ -85,7 +85,7 @@ class LoadImages:  # for inference
             self.count += 1
             img0 = cv2.imread(path)  # BGR
             assert img0 is not None, 'Image Not Found ' + path
-            print(f'image {self.count}/{self.nf} {path}: ', end='')
+            #print(f'image {self.count}/{self.nf} {path}: ', end='')
 
         # Padded resize
         img = letterbox(img0, self.img_size, stride=self.stride, auto=self.auto)[0]
@@ -139,6 +139,7 @@ class AortaDataset3D(Dataset):
                 if s == depth:
                     self.datas.append([[join(img_dir, label, img) for img in group_list], i])
                 # self.datas.append([[join(img_dir, label, img_list[k]) for k in range(j, j + (depth-1)*step+1)], i])
+        train_log = logging.getLogger('train_log')
         train_log.info(f'Creating dataset with {len(self.datas)} examples. Depth:{depth}, Step:{step}')
 
     def __len__(self):
@@ -154,7 +155,7 @@ class AortaDataset3D(Dataset):
             if self.residual and img_list:
                 res = img - img_list[-1]
                 res = (res + 1) / 2
-                img_list.append(img - img_list[-1])
+                img_list.append(res)
             img_list.append(img)
         imgs = torch.stack(img_list, dim=1)
         return imgs, label
@@ -169,6 +170,50 @@ class AortaTest(Dataset):
         return len(self.datas)
 
     def __getitem__(self, i):
-        img = Image.open(join(self.img_dir, self.data[i]))
+        img = Image.open(join(self.img_dir, self.datas[i]))
         img = self.transform(img)
         return img
+
+class AortaTest3D(Dataset):
+    def __init__(self, img_dir, transform, depth, step=1, residual=False):
+        self.img_dir = img_dir
+        self.transform = transform
+        self.depth = depth
+        self.step = step
+        self.residual = residual
+        self.files = sorted(list(filter(lambda x: not x.startswith('.') and isfile(join(img_dir, x)), listdir(img_dir))))
+        self.datas = []
+        il_len = len(self.files)
+        for j in range(il_len - (depth-1)*step):
+            nl = re.split('[_.]', self.files[j])
+            assert len(nl) == 3, 'Format of image file name is wrong.'
+            s = 0
+            group_list = []
+            for k in range(j, j + (depth-1)*step+1):
+                nlk = re.split('[_.]', self.files[k])
+                assert len(nlk) == 3, 'Format of image file name is wrong.'
+                assert nl[0] == nlk[0], 'Name of crops are different!'
+                if int(nl[1]) + s*step == int(nlk[1]):
+                    group_list.append(self.files[k])
+                    s += 1
+                    if s == depth:
+                        break
+            if s == depth:
+                self.datas.append([join(img_dir, img) for img in group_list])
+
+    def __len__(self):
+        return len(self.datas)
+
+    def __getitem__(self, i):
+        img_path_list = self.datas[i]
+        img_list = []
+        for img_path in img_path_list:
+            img = Image.open(img_path)
+            img = self.transform(img)
+            if self.residual and img_list:
+                res = img - img_list[-1]
+                #res = (res + 1) / 2
+                img_list.append(res)
+            img_list.append(img)
+        imgs = torch.stack(img_list, dim=1)
+        return imgs
