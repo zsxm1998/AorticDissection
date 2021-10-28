@@ -5,10 +5,12 @@ import warnings
 import time
 
 import numpy as np
+from numpy.random import shuffle
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import optim
+from torchvision import datasets
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader, random_split, WeightedRandomSampler
@@ -21,14 +23,17 @@ from PIL import Image
 from utils.eval import eval_net
 from utils.print_log import train_log
 from models.resnet3d import generate_model
-from utils.datasets import AortaDataset3D
+from utils.datasets import AortaDataset3D, LabelSampler
 
 warnings.filterwarnings("ignore")
 os.environ['CUDA_VISIBLE_DEVICES'] = '0,2'
 # cudnn.benchmark = True # faster convolutions, but more memory
-np.random.seed(63910)
-torch.manual_seed(53152)
-torch.cuda.manual_seed_all(7987)
+# np.random.seed(63910)
+# torch.manual_seed(53152)
+# torch.cuda.manual_seed_all(7987)
+np.random.seed(0)
+torch.manual_seed(0)
+torch.cuda.manual_seed_all(0)
 torch.backends.cudnn.deterministic = True
 
 
@@ -102,6 +107,28 @@ def train_net(net,
         with open(path, 'rb') as f:
             return Image.open(f)
 
+    def get_weight_list(dataset):
+        pos_list = []
+        neg_list = []
+        for i in range(len(dataset)):
+            if dataset[i][1] == 0:
+                neg_list.append(i)
+            elif dataset[i][1] == 1:
+                pos_list.append(i)
+            else:
+                raise ValueError
+        
+        weight_list = []
+        pos_num, neg_num = len(pos_list), len(neg_list)
+        for i in range(len(dataset)):
+            if i in pos_list:
+                weight_list.append(1/pos_num)
+            elif i in neg_list:
+                weight_list.append(1/neg_num)
+            else:
+                raise ValueError
+        return weight_list
+
     # dataset = ImageFolder(dir_img, transform=transform, loader=lambda path: Image.open(path))
     # ss = StratifiedShuffleSplit(n_splits=1, test_size=val_percent, random_state=7888)
     # labels = [dataset[i][1] for i in range(len(dataset))]
@@ -115,9 +142,10 @@ def train_net(net,
         train = ImageFolder(os.path.join(dir_img, 'train'), transform=transform, loader=lambda path: Image.open(path))
         val = ImageFolder(os.path.join(dir_img, 'val'), transform=transform, loader=lambda path: Image.open(path))
     
-    n_train = len(train)
+    lsampler = LabelSampler(train)
+    n_train = len(lsampler)#len(train)
     n_val = len(val)
-    train_loader = DataLoader(train, batch_size=batch_size, shuffle=True, num_workers=8, pin_memory=True)
+    train_loader = DataLoader(train, batch_size=batch_size, sampler=lsampler, num_workers=8, pin_memory=True)
     val_loader = DataLoader(val, batch_size=batch_size, shuffle=False, num_workers=8, pin_memory=True, drop_last=False)
 
     train_log.info(f'''Starting training net:
@@ -287,7 +315,7 @@ def get_args():
                         help='Part of the data that is used as validation (0.0-1.0)')
     parser.add_argument('-p', '--source', dest='source', type=str, default='./',
                         help='Image source path')
-    parser.add_argument('-t', '--three-dimension', dest='flag_3d', type=bool, default=False,
+    parser.add_argument('-t', '--three-dimension', dest='flag_3d', action='store_true',
                         help='Whether use 3D model')
     parser.add_argument('-dp', '--depth', dest='depth_3d', type=int, default=7,
                         help='Depth of the 3D images')

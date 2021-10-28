@@ -22,7 +22,7 @@ from models.resnet3d import generate_model
 from utils.datasets import AortaTest, AortaTest3D
 
 PAD_NUM = 4
-POSITIVE_THRESHOLD = 3
+POSITIVE_THRESHOLD = 4
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 
@@ -65,7 +65,7 @@ def find_branch(label_path):
     for i, label_txt in enumerate(label_file_list):
         with open(label_txt, 'r') as txtf:
             lines = txtf.readlines()
-        assert 0 < len(lines) < 3
+        assert 0 < len(lines) < 3, f'{label_txt}'
         index = int(re.split('[_.]', os.path.basename(label_txt))[-2])
         elem = []
         if i < 0.5*len(label_file_list) and pre > 0 and len(lines) > pre:
@@ -88,7 +88,7 @@ def find_branch(label_path):
             elem.append([aorta[1], aorta[2], aorta[3], aorta[4]])
             elem.append([branch[1], branch[2], branch[3], branch[4]])
         label_dict[index] = elem
-    assert len(candidate_branch) > 0
+    assert len(candidate_branch) > 0, f'{label_path}'
     keys_list = list(label_dict.keys())
     min_idx, max_idx = keys_list[0], keys_list[-1]
     branch_start, branch_end, b_len = -1, -1, -1
@@ -222,8 +222,8 @@ def create_net(device,
                n_channels=1,
                n_classes=1,
                load_model=False,
-               flag_3d=False):
-    
+               flag_3d=True
+               ):
     if flag_3d:
         net = generate_model(34, n_channels=n_channels, n_classes=n_classes, conv1_t_size=3)
     else:
@@ -240,7 +240,7 @@ def create_net(device,
 
 
 @torch.no_grad()
-def aorta_classify(model, device, aorta_path, transform, flag_3d=False):
+def aorta_classify(model, device, aorta_path, transform, flag_3d=True):
     if flag_3d:
         dateset = AortaTest3D(aorta_path, transform, depth=11, step=3)
     else:
@@ -291,8 +291,8 @@ def delete_temp_dir(image_path):
         shutil.rmtree(image_path)
     if os.path.exists(os.path.join(parents_path, 'labels')):
         shutil.rmtree(os.path.join(parents_path, 'labels'))
-    if os.path.exists(os.path.join(parents_path, 'pred_images')):
-        shutil.rmtree(os.path.join(parents_path, 'pred_images'))
+    # if os.path.exists(os.path.join(parents_path, 'pred_images')):
+    #     shutil.rmtree(os.path.join(parents_path, 'pred_images'))
     if os.path.exists(os.path.join(parents_path, 'crops')):
         shutil.rmtree(os.path.join(parents_path, 'crops'))
 
@@ -340,6 +340,8 @@ def main(source,
                 print(f'{patient}分型: 阴性')
                 result_list.append('N')
         except KeyboardInterrupt:
+            image_path = os.path.join(patient, f'images_{window_width}_{window_level}')
+            print(f'KeyboardInterrupt, deleteing temp dirs in: {os.path.dirname(image_path)}')
             delete_temp_dir(image_path)
             try:
                 sys.exit(0)
@@ -361,6 +363,7 @@ def get_args():
     parser.add_argument('-wl', '--window_level', type=int, default=200, help='window level')
     parser.add_argument('-yw', '--yolo_weight', type=str, required=True, help='Yolov5 weight for aorta detection')
     parser.add_argument('-rw', '--resnet_weight', type=str, required=True, help='Resnet34 weight for classification')
+    parser.add_argument('-t', '--flag_3d', action='store_true', help='Use 3D model')
 
     return parser.parse_args()
 

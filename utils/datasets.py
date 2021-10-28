@@ -5,6 +5,7 @@ Dataloaders and dataset utils
 
 import glob
 import os
+import sys
 from pathlib import Path
 import re
 from os import listdir
@@ -15,7 +16,7 @@ import cv2
 import numpy as np
 import torch
 from PIL import Image
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Sampler
 
 from utils.augmentations import letterbox
 
@@ -217,3 +218,35 @@ class AortaTest3D(Dataset):
             img_list.append(img)
         imgs = torch.stack(img_list, dim=1)
         return imgs
+
+
+class LabelSampler(Sampler[int]):
+    def __init__(self, data_source, shuffle=True):
+        self.data_source = data_source
+        self.shuffle = shuffle
+        self.labels = [data_source[i][1] for i in range(len(data_source))]
+        self.unique_labels = np.unique(self.labels)
+        self.labels_index_dict = {self.unique_labels[i]: [] for i in range(len(self.unique_labels))}
+        for i, label in enumerate(self.labels):
+            self.labels_index_dict[label].append(i)
+        self.shortest_label = -1
+        self.shortest_label_len = sys.maxsize
+        for k, v in self.labels_index_dict.items():
+            if len(v) < self.shortest_label_len:
+                self.shortest_label = k
+                self.shortest_label_len = len(v)
+        assert self.shortest_label != -1
+
+    def __iter__(self):
+        sample_list = []
+        for k, v in self.labels_index_dict.items():
+            if k == self.shortest_label:
+                sample_list.extend(v)
+            else:
+                sample_list += np.random.choice(v, self.shortest_label_len, False).tolist()
+        if self.shuffle:
+            np.random.shuffle(sample_list)
+        return iter(sample_list)
+
+    def __len__(self):
+        return self.shortest_label_len * len(self.unique_labels)

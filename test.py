@@ -117,3 +117,29 @@ def plot_3d(image, threshold=-300):
 
 plot_3d(pix_resampled, 400)
 # %%
+from train import create_net
+from utils.eval import eval_net
+import torch
+import os
+from PIL import Image
+from torchvision.datasets import ImageFolder
+from torchvision import transforms as T
+from torch.utils.data import DataLoader
+from utils.datasets import LabelSampler
+
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+net = create_net(device, load_model='checkpoints/10-18_13:44:44/Net_best.pth')
+
+transform = T.Compose([
+    T.Resize(51), # 缩放图片(Image)，保持长宽比不变，最短边为img_size像素
+    T.CenterCrop(51), # 从图片中间切出img_size*img_size的图片
+    T.ToTensor(), # 将图片(Image)转成Tensor，归一化至[0, 1]
+    #T.Normalize(mean=[.5], std=[.5]) # 标准化至[-1, 1]，规定均值和标准差
+])
+
+val = ImageFolder('/nfs3-p1/zsxm/dataset/aorta_classify_ct_-100_500/val', transform=transform, loader=lambda path: Image.open(path))
+val_loader = DataLoader(val, batch_size=128, sampler=LabelSampler(val), num_workers=8, pin_memory=True, drop_last=False)
+eval_net(net, val_loader, len(val), device, True, PR_curve_save_dir='./')
+# %%
