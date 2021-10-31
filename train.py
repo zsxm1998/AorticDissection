@@ -1,4 +1,3 @@
-import argparse
 import os
 import sys
 import warnings
@@ -32,7 +31,7 @@ warnings.filterwarnings("ignore")
 np.random.seed(63910)
 torch.manual_seed(53152)
 torch.cuda.manual_seed_all(7987)
-torch.backends.cudnn.deterministic = True
+.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = True # faster convolutions, but more memory
 
 
