@@ -4,6 +4,7 @@ import sys
 import warnings
 import time
 import yaml
+from types import SimpleNamespace
 
 import numpy as np
 from numpy.random import shuffle
