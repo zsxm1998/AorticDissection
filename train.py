@@ -29,12 +29,12 @@ from utils.datasets import AortaDataset3D, LabelSampler
 from models.SupCon import resnet34
 
 warnings.filterwarnings("ignore")
-os.environ['CUDA_VISIBLE_DEVICES'] = '2'
-# cudnn.benchmark = True # faster convolutions, but more memory
 np.random.seed(63910)
 torch.manual_seed(53152)
 torch.cuda.manual_seed_all(7987)
 torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = True # faster convolutions, but more memory
+
 
 
 def create_net(device,
@@ -77,7 +77,6 @@ def train_net(net,
               epochs=50,
               batch_size=128,
               lr=0.0001,
-              val_percent=0.2,
               img_size=51,
               save_cp=True,
               load_optim=False,
@@ -85,10 +84,10 @@ def train_net(net,
               dir_checkpoint='checkpoints/',
               dir_img='/nfs3-p1/zsxm/dataset/aorta_classify_ct/',
               flag_3d=False,
-              depth_3d=7,
-              step_3d=1,
-              residual_3d=False,
-              info=''):
+              info='',
+              **kwargs):
+
+    args = SimpleNamespace(**kwargs)
     
     if not os.path.exists(dir_checkpoint):
         os.mkdir(dir_checkpoint)
@@ -136,8 +135,8 @@ def train_net(net,
     # train = torch.utils.data.Subset(dataset, train_idx)
     # val = torch.utils.data.Subset(dataset, val_idx)
     if flag_3d:
-        train = AortaDataset3D(os.path.join(dir_img, 'train'), transform=transform, depth=depth_3d, step=step_3d, residual=residual_3d)
-        val = AortaDataset3D(os.path.join(dir_img, 'val'), transform=transform, depth=depth_3d, step=step_3d, residual=residual_3d)
+        train = AortaDataset3D(os.path.join(dir_img, 'train'), transform=transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
+        val = AortaDataset3D(os.path.join(dir_img, 'val'), transform=transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
     else:
         train = ImageFolder(os.path.join(dir_img, 'train'), transform=transform, loader=lambda path: Image.open(path))
         val = ImageFolder(os.path.join(dir_img, 'val'), transform=transform, loader=lambda path: Image.open(path))
@@ -298,58 +297,26 @@ def train_net(net,
     return dir_checkpoint
 
 
-def get_args():
-    parser = argparse.ArgumentParser(description='Train the Net on images and labels',
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-e', '--epochs', metavar='E', type=int, default=50,
-                        help='Number of epochs', dest='epochs')
-    parser.add_argument('-b', '--batch-size', metavar='B', type=int, nargs='?', default=128,
-                        help='Batch size', dest='batchsize')
-    parser.add_argument('-l', '--learning-rate', metavar='LR', type=float, nargs='?', default=0.0001,
-                        help='Learning rate', dest='lr')
-    parser.add_argument('-f', '--load', dest='load', type=str, default=False,
-                        help='Load model from a .pth file')
-    parser.add_argument('-s', '--size', dest='size', type=int, default=51,
-                        help='Size of the images')
-    parser.add_argument('-v', '--validation', dest='val', type=float, default=0.2,
-                        help='Part of the data that is used as validation (0.0-1.0)')
-    parser.add_argument('-p', '--source', dest='source', type=str, default='./',
-                        help='Image source path')
-    parser.add_argument('-t', '--three-dimension', dest='flag_3d', action='store_true',
-                        help='Whether use 3D model')
-    parser.add_argument('-dp', '--depth', dest='depth_3d', type=int, default=7,
-                        help='Depth of the 3D images')
-    parser.add_argument('-st', '--step', dest='step_3d', type=int, default=1,
-                        help='Step of the 3D images')
-    parser.add_argument('-res', '--residual', dest='residual_3d', action='store_true',
-                        help='Residual of the 3D images')
-    parser.add_argument('-i', '--info', dest='info', type=str, default='',
-                        help='Training information')
-
-    return parser.parse_args()
-
 
 if __name__ == '__main__':
-    # logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
-    args = get_args()
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    with open('./args.yaml') as f:
+        args = yaml.safe_load(f)
+        f.seek(0)
+        train_log.info('args.yaml START************************\n'
+            f'{f.read()}\n'
+            '************************args.yaml END**************************\n')
+    
+    if str(args['device']) == 'cpu':
+        device = torch.device('cpu')
+    else:
+        os.environ['CUDA_VISIBLE_DEVICES'] = str(args['device'])
+        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    args.pop('device')
     train_log.info(f'Using device {device}')
 
-    net = create_net(device, load_model=args.load, flag_3d=args.flag_3d)
+    net = create_net(device, load_model=args['load_model'], flag_3d=args['flag_3d'])
     try:
-        train_net(net,
-                  device,
-                  epochs=args.epochs,
-                  batch_size=args.batchsize,
-                  lr=args.lr,
-                  val_percent=args.val,
-                  img_size=args.size,
-                  dir_img=args.source,
-                  flag_3d=args.flag_3d,
-                  depth_3d=args.depth_3d,
-                  step_3d=args.step_3d,
-                  residual_3d = args.residual_3d,
-                  info=args.info)
+        train_net(net, device, **args)
     except KeyboardInterrupt:
         module = net.module if isinstance(net, nn.DataParallel) else net
         torch.save(net.state_dict(), f'checkpoints/{module.__class__.__name__}_INTERRUPTED.pth')

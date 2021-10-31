@@ -1,0 +1,16 @@
+device: 0 # cuda device to use, i.e. 0 or 0,1,2,3 or cpu'
+load_model: false # initial weights path, "false" means not load model weight
+epochs: 50
+batch_size: 128
+lr: 0.0001 # learning rate
+val_percent: 0.2 # Part of the data that is used as validation (0.0-1.0)
+img_size: 51
+save_cp: true # whether save checkpoints
+load_optim: false # load optimizer from .pth file
+load_scheduler: false # load scheduler from .pth file
+dir_img: '/nfs3-p1/zsxm/dataset/aorta_classify_ct_-100_500/'
+info: '' 
+flag_3d: false
+depth_3d: 7
+step_3d: 1
+residual_3d: false
