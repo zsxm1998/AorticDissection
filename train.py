@@ -3,6 +3,7 @@ import os
 import sys
 import warnings
 import time
+import yaml
 
 import numpy as np
 from numpy.random import shuffle
@@ -15,7 +16,7 @@ from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader, random_split, WeightedRandomSampler
 from sklearn.model_selection import StratifiedShuffleSplit
-import torchvision.models as models
+#import torchvision.models as models
 from torchvision.datasets import ImageFolder
 from torchvision import transforms as T
 from PIL import Image
@@ -24,16 +25,14 @@ from utils.eval import eval_net
 from utils.print_log import train_log
 from models.resnet3d import generate_model
 from utils.datasets import AortaDataset3D, LabelSampler
+from models.SupCon import resnet34
 
 warnings.filterwarnings("ignore")
-os.environ['CUDA_VISIBLE_DEVICES'] = '0,2'
+os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 # cudnn.benchmark = True # faster convolutions, but more memory
-# np.random.seed(63910)
-# torch.manual_seed(53152)
-# torch.cuda.manual_seed_all(7987)
-np.random.seed(0)
-torch.manual_seed(0)
-torch.cuda.manual_seed_all(0)
+np.random.seed(63910)
+torch.manual_seed(53152)
+torch.cuda.manual_seed_all(7987)
 torch.backends.cudnn.deterministic = True
 
 
@@ -46,7 +45,7 @@ def create_net(device,
     if flag_3d:
         net = generate_model(34, n_channels=n_channels, n_classes=n_classes, conv1_t_size=3)
     else:
-        net = models.resnet34(pretrained=False)
+        net = resnet34(pretrained=False)
         net.n_channels, net.n_classes = n_channels, n_classes
         net.conv1 = nn.Conv2d(n_channels, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
         net.fc = nn.Linear(in_features=512, out_features=n_classes, bias=True)

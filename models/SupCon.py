@@ -214,7 +214,9 @@ class ResNet(nn.Module):
             downsample = nn.Sequential(
                 conv1x1(self.inplanes, planes * block.expansion, stride),
                 norm_layer(planes * block.expansion),
-            )
+            ) if stride == 1 else nn.Sequential(nn.AvgPool2d(stride, stride, ceil_mode=True),
+                conv1x1(self.inplanes, planes * block.expansion, 1),
+                norm_layer(planes * block.expansion))
 
         layers = []
         layers.append(block(self.inplanes, planes, stride, downsample, self.groups,
