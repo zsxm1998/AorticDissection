@@ -105,6 +105,7 @@ class ResNet(nn.Module):
                  block,
                  layers,
                  block_inplanes,
+                 net_name='ResNet3D_custom',
                  n_channels=3,
                  n_classes=400,
                  conv1_t_size=7,
@@ -116,6 +117,7 @@ class ResNet(nn.Module):
 
         self.n_channels = n_channels
         self.n_classes = n_classes
+        self.net_name = net_name
 
         block_inplanes = [int(x * widen_factor) for x in block_inplanes]
 
@@ -220,18 +222,18 @@ def generate_model(model_depth, **kwargs):
     assert model_depth in [10, 18, 34, 50, 101, 152, 200]
 
     if model_depth == 10:
-        model = ResNet(BasicBlock, [1, 1, 1, 1], get_inplanes(), **kwargs)
+        model = ResNet(BasicBlock, [1, 1, 1, 1], get_inplanes(), 'ResNet3D_10', **kwargs)
     elif model_depth == 18:
-        model = ResNet(BasicBlock, [2, 2, 2, 2], get_inplanes(), **kwargs)
+        model = ResNet(BasicBlock, [2, 2, 2, 2], get_inplanes(), 'ResNet3D_18', **kwargs)
     elif model_depth == 34:
-        model = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), **kwargs)
+        model = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), 'ResNet3D_34', **kwargs)
     elif model_depth == 50:
-        model = ResNet(Bottleneck, [3, 4, 6, 3], get_inplanes(), **kwargs)
+        model = ResNet(Bottleneck, [3, 4, 6, 3], get_inplanes(), 'ResNet3D_50', **kwargs)
     elif model_depth == 101:
-        model = ResNet(Bottleneck, [3, 4, 23, 3], get_inplanes(), **kwargs)
+        model = ResNet(Bottleneck, [3, 4, 23, 3], get_inplanes(), 'ResNet3D_101', **kwargs)
     elif model_depth == 152:
-        model = ResNet(Bottleneck, [3, 8, 36, 3], get_inplanes(), **kwargs)
+        model = ResNet(Bottleneck, [3, 8, 36, 3], get_inplanes(), 'ResNet3D_152', **kwargs)
     elif model_depth == 200:
-        model = ResNet(Bottleneck, [3, 24, 36, 3], get_inplanes(), **kwargs)
+        model = ResNet(Bottleneck, [3, 24, 36, 3], get_inplanes(), 'ResNet3D_200', **kwargs)
 
     return model

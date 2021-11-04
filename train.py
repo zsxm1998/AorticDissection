@@ -24,7 +24,7 @@ from utils.eval import eval_net
 from utils.print_log import train_log
 from models.resnet3d import generate_model
 from utils.datasets import AortaDataset3D, LabelSampler
-from models.SupCon import resnet34
+from models.SupCon import *
 
 warnings.filterwarnings("ignore")
 np.random.seed(63910)
@@ -35,24 +35,20 @@ torch.backends.cudnn.benchmark = True # faster convolutions, but more memory
 
 
 
+"""************************************************** Cross Entropy **************************************************"""
 def create_net(device,
                n_channels=1,
-               n_classes=1,
+               n_classes=4,
                load_model=False,
                flag_3d=False):
     
     if flag_3d:
         net = generate_model(34, n_channels=n_channels, n_classes=n_classes, conv1_t_size=3)
     else:
-        net = resnet34(pretrained=False)
-        net.n_channels, net.n_classes = n_channels, n_classes
-        net.conv1 = nn.Conv2d(n_channels, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
-        net.fc = nn.Linear(in_features=512, out_features=n_classes, bias=True)
-        #net.fc = nn.Linear(in_features=2048, out_features=n_classes, bias=True)
-    
+        net = resnet50(n_channels=n_channels, n_classes=n_classes)
 
     train_log.info('**********************************************************************\n'
-                 f'Network: {net.__class__.__name__}\n'
+                 f'Network: {net.net_name}\n'
                  f'\t{n_channels} input channels\n'
                  f'\t{n_classes} output channels (classes)\n'
                  f'\t3D model: {flag_3d}\n')
@@ -139,10 +135,10 @@ def train_net(net,
         train = ImageFolder(os.path.join(dir_img, 'train'), transform=transform, loader=lambda path: Image.open(path))
         val = ImageFolder(os.path.join(dir_img, 'val'), transform=transform, loader=lambda path: Image.open(path))
     
-    lsampler = LabelSampler(train)
-    n_train = len(lsampler)#len(train)
+    lsampler = None#LabelSampler(train)
+    n_train = len(train) #len(lsampler)
     n_val = len(val)
-    train_loader = DataLoader(train, batch_size=batch_size, sampler=lsampler, num_workers=8, pin_memory=True)
+    train_loader = DataLoader(train, batch_size=batch_size, sampler=lsampler, shuffle=lsampler is None, num_workers=8, pin_memory=True)
     val_loader = DataLoader(val, batch_size=batch_size, shuffle=False, num_workers=8, pin_memory=True, drop_last=False)
 
     train_log.info(f'''Starting training net:
@@ -251,7 +247,7 @@ def train_net(net,
             writer.add_images('categories/true', true_categories[:, None, None, None].repeat(1,1,100,100).float(), global_step)
             writer.add_images('categories/pred', (torch.sigmoid(categories_pred)>0.5)[:, :, None, None].repeat(1,1,100,100), global_step)
         else:
-            color_list = [torch.ByteTensor([0,0,0]), torch.ByteTensor([255,0,0]), torch.ByteTensor([0,255,0])]
+            color_list = [torch.ByteTensor([0,0,0]), torch.ByteTensor([255,0,0]), torch.ByteTensor([0,255,0]), torch.ByteTensor([0,0,255])]
             true_categories_img = torch.zeros(true_categories.shape[0], 100, 100, 3, dtype = torch.uint8)
             categories_pred_img = torch.zeros(categories_pred.shape[0], 100, 100, 3, dtype = torch.uint8)
             categories_pred_idx = categories_pred.argmax(dim=1)
@@ -296,6 +292,34 @@ def train_net(net,
 
 
 
+"""************************************************** Supervised Contrastive **************************************************"""
+def create_supcon(device,
+                  n_channels=1,
+                  load_model=False,
+                  flag_3d=False):
+
+    net = SupConResNet(name='resnet34', head='mlp', feat_dim=128)
+    net.n_channels, net.n_classes = n_channels, n_classes
+    net.encoder.conv1 = nn.Conv2d(n_channels, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+
+    train_log.info('**********************************************************************\n'
+                 f'Network: {net.__class__.__name__}\n'
+                 f'\t{n_channels} input channels\n'
+                 f'\t{n_classes} output channels (classes)\n'
+                 f'\t3D model: {flag_3d}\n')
+
+    if load_model:
+        net.load_state_dict(torch.load(load_model, map_location=device))
+        train_log.info(f'Model loaded from {load_model}')
+
+    net.to(device=device)
+
+    if torch.cuda.device_count() > 1:
+        net = nn.DataParallel(net)
+        train_log.info(f'torch.cuda.device_count:{torch.cuda.device_count()}, Use nn.DataParallel')
+
+    return net
+
 if __name__ == '__main__':
     with open('./args.yaml') as f:
         args = yaml.safe_load(f)
@@ -312,7 +336,13 @@ if __name__ == '__main__':
     args.pop('device')
     train_log.info(f'Using device {device}')
 
-    net = create_net(device, n_channels=args['n_channels'], n_classes=args['n_classes'], load_model=args['load_model'])
+    if args['method'].lower() == 'ce':
+        net = create_net(device, n_channels=args['n_channels'], n_classes=args['n_classes'], load_model=args['load_model'])
+    elif args['method'].lower() == 'supcon' or args['method'].lower() == 'simclr':
+        pass
+    else:
+        raise NotImplementedError(args['method'])
+
     try:
         train_net(net, device, **args)
     except KeyboardInterrupt:
