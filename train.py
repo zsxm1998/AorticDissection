@@ -11,7 +11,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import optim
-from torchvision import datasets
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader, random_split, WeightedRandomSampler
@@ -282,7 +281,7 @@ def train_net(net,
 
     # print PR-curve
     train_log.info('Train done! Eval best net and draw PR-curve...')
-    net = create_net(device, load_model=os.path.join(dir_checkpoint, 'Net_best.pth'), flag_3d=flag_3d)
+    net = create_net(device, n_channels=args.n_channels, n_classes=args.n_classes, load_model=os.path.join(dir_checkpoint, 'Net_best.pth'), flag_3d=flag_3d)
     val_score, val_loss, PR_curve_img = eval_net(net, val_loader, n_val, device, final=True, PR_curve_save_dir=dir_checkpoint)
     writer.add_images('PR-curve', np.array(Image.open(PR_curve_img)), dataformats='HWC')
     if module.n_classes > 1:
@@ -313,7 +312,7 @@ if __name__ == '__main__':
     args.pop('device')
     train_log.info(f'Using device {device}')
 
-    net = create_net(device, load_model=args['load_model'], flag_3d=args['flag_3d'])
+    net = create_net(device, n_channels=args['n_channels'], n_classes=args['n_classes'], load_model=args['load_model'])
     try:
         train_net(net, device, **args)
     except KeyboardInterrupt:
