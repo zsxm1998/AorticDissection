@@ -3,6 +3,7 @@
 /runs
 /logs
 /checkpoints
+/details
 *__pycache__
 *.png
 Arial.ttf
