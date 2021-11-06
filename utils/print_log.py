@@ -4,7 +4,7 @@ import time
 import logging
 from logging import Logger, Formatter, StreamHandler, FileHandler, Filter, handlers
 
-log_dir = 'logs/'
+log_dir = 'details/logs/'
 if not os.path.exists(log_dir):
     os.mkdir(log_dir)
     print(f'Make log dir: {os.path.join(os.getcwd(), log_dir)}')
@@ -29,7 +29,7 @@ stdf.addFilter(LevelFilter('std_filter', logging.INFO))
 stdf.setFormatter(Formatter('[%(levelname)s]: %(message)s'))
 train_log.addHandler(stdf)
 
-filef = FileHandler(f'logs/log_train_{time.strftime("%m-%d_%H:%M:%S", time.localtime())}.txt', 'w')
+filef = FileHandler(f'{log_dir}/log_train_{time.strftime("%m-%d_%H:%M:%S", time.localtime())}.txt', 'w')
 filef.addFilter(LevelFilter('file_filter', logging.INFO))
 filef.setFormatter(Formatter('[%(levelname)s %(asctime)s] %(message)s', "%Y%m%d-%H:%M:%S"))
 train_log.addHandler(filef)

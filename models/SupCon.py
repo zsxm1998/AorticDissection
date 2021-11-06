@@ -1,11 +1,11 @@
 import torch
 from torch import Tensor
 import torch.nn as nn
-import torch.functional as F
+import torch.nn.functional as F
 from typing import Type, Any, Callable, Union, List, Optional
 
 
-__all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152']
+__all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', 'SupConResNet', 'TwoCropTransform']
 
 
 def conv3x3(in_planes: int, out_planes: int, stride: int = 1, groups: int = 1, dilation: int = 1) -> nn.Conv2d:
@@ -140,6 +140,7 @@ class ResNetEncoder(nn.Module):
         norm_layer: Optional[Callable[..., nn.Module]] = None
     ) -> None:
         super(ResNetEncoder, self).__init__()
+        self.n_channels = n_channels
         if norm_layer is None:
             norm_layer = nn.BatchNorm2d
         self._norm_layer = norm_layer
@@ -242,6 +243,8 @@ class ResNet(nn.Module):
         net_name: str = 'ResNet_custom',
         n_channels: int = 3,
         n_classes: int = 1,
+        entire: bool = True,
+        encoder: Optional[ResNetEncoder] = None,
         zero_init_residual: bool = False,
         groups: int = 1,
         width_per_group: int = 64,
@@ -249,42 +252,71 @@ class ResNet(nn.Module):
         norm_layer: Optional[Callable[..., nn.Module]] = None
     ) -> None:
         super(ResNet, self).__init__()
-        self.n_channels = n_channels
+        self.n_channels = n_channels if encoder is None else encoder.n_channels
         self.n_classes = n_classes
         self.net_name = net_name
-        self.encoder = ResNetEncoder(block, layers, n_channels, zero_init_residual, groups, width_per_group, replace_stride_with_dilation, norm_layer)
+        self.entire = entire
+        self.encoder = ResNetEncoder(block, layers, n_channels, zero_init_residual, groups, width_per_group, replace_stride_with_dilation, norm_layer) if encoder is None else encoder
         self.fc = nn.Linear(512 * block.expansion, n_classes)
+        if not entire:
+            self.encoder.eval()
 
     def forward(self, x: Tensor) -> Tensor:
-        return self.fc(self.encoder(x))
+        if self.entire:
+            x = self.encoder(x)
+        else:
+            with torch.no_grad():
+                x = self.encoder(x)
+            x = x.detach() #这句可不可以去掉？
+        return self.fc(x)
 
 
-def resnet18(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
+def resnet18(**kwargs: Any) -> ResNet:
     return ResNet(BasicBlock, [2, 2, 2, 2], 'ResNet_18', **kwargs)
 
 
-def resnet34(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
+def resnet34(**kwargs: Any) -> ResNet:
     return ResNet(BasicBlock, [3, 4, 6, 3], 'ResNet_34', **kwargs)
 
 
-def resnet50(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
+def resnet50(**kwargs: Any) -> ResNet:
     return ResNet(Bottleneck, [3, 4, 6, 3], 'ResNet_50', **kwargs)
 
 
-def resnet101(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
+def resnet101(**kwargs: Any) -> ResNet:
     return ResNet(Bottleneck, [3, 4, 23, 3], 'ResNet_101', **kwargs)
 
 
-def resnet152(pretrained: bool = False, progress: bool = True, **kwargs: Any) -> ResNet:
+def resnet152(**kwargs: Any) -> ResNet:
     return ResNet(Bottleneck, [3, 8, 36, 3], 'ResNet_152', **kwargs)
 
 
+def resnet_encoder18(**kwargs: Any) -> ResNet:
+    return ResNetEncoder(BasicBlock, [2, 2, 2, 2], **kwargs)
+
+
+def resnet_encoder34(**kwargs: Any) -> ResNet:
+    return ResNetEncoder(BasicBlock, [3, 4, 6, 3], **kwargs)
+
+
+def resnet_encoder50(**kwargs: Any) -> ResNet:
+    return ResNetEncoder(Bottleneck, [3, 4, 6, 3], **kwargs)
+
+
+def resnet_encoder101(**kwargs: Any) -> ResNet:
+    return ResNetEncoder(Bottleneck, [3, 4, 23, 3], **kwargs)
+
+
+def resnet_encoder152(**kwargs: Any) -> ResNet:
+    return ResNetEncoder(Bottleneck, [3, 8, 36, 3], **kwargs)
+
+
 model_dict = {
-    'resnet18': [resnet18, 512],
-    'resnet34': [resnet34, 512],
-    'resnet50': [resnet50, 2048],
-    'resnet101': [resnet101, 2048],
-    'resnet152': [resnet152, 2048],
+    'resnet18': [resnet_encoder18, 512],
+    'resnet34': [resnet_encoder34, 512],
+    'resnet50': [resnet_encoder50, 2048],
+    'resnet101': [resnet_encoder101, 2048],
+    'resnet152': [resnet_encoder152, 2048],
 }
 
 
@@ -304,10 +336,13 @@ class LinearBatchNorm(nn.Module):
 
 class SupConResNet(nn.Module):
     """backbone + projection head"""
-    def __init__(self, name='resnet34', head='mlp', feat_dim=128):
+    def __init__(self, n_channels=3, name='resnet34', head='mlp', feat_dim=128, norm_encoder_output=False):
         super(SupConResNet, self).__init__()
+        self.n_channels = n_channels
+        self.name = name
+        self.norm_encoder_output = norm_encoder_output
         model_fun, dim_in = model_dict[name]
-        self.encoder = model_fun()
+        self.encoder = model_fun(n_channels=n_channels)
         if head == 'linear':
             self.head = nn.Linear(dim_in, feat_dim)
         elif head == 'mlp':
@@ -321,32 +356,12 @@ class SupConResNet(nn.Module):
                 'head not supported: {}'.format(head))
 
     def forward(self, x):
-        feat = self.encoder(x)
+        if self.norm_encoder_output:
+            feat = F.normalize(self.encoder(x), dim=1)
+        else:
+            feat = self.encoder(x)
         feat = F.normalize(self.head(feat), dim=1)
         return feat
-
-
-class SupCEResNet(nn.Module):
-    """encoder + classifier"""
-    def __init__(self, name='resnet34', num_classes=4):
-        super(SupCEResNet, self).__init__()
-        model_fun, dim_in = model_dict[name]
-        self.encoder = model_fun()
-        self.fc = nn.Linear(dim_in, num_classes)
-
-    def forward(self, x):
-        return self.fc(self.encoder(x))
-
-
-class LinearClassifier(nn.Module):
-    """Linear classifier"""
-    def __init__(self, name='resnet34', num_classes=4):
-        super(LinearClassifier, self).__init__()
-        _, feat_dim = model_dict[name]
-        self.fc = nn.Linear(feat_dim, num_classes)
-
-    def forward(self, features):
-        return self.fc(features)
 
 
 class TwoCropTransform:
