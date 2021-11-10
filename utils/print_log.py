@@ -6,7 +6,7 @@ from logging import Logger, Formatter, StreamHandler, FileHandler, Filter, handl
 
 log_dir = 'details/logs/'
 if not os.path.exists(log_dir):
-    os.mkdir(log_dir)
+    os.makedirs(log_dir)
     print(f'Make log dir: {os.path.join(os.getcwd(), log_dir)}')
 
 class LevelFilter(Filter):

@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from typing import Type, Any, Callable, Union, List, Optional
 
 
-__all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', 'SupConResNet', 'TwoCropTransform']
+__all__ = ['resnet', 'ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', 'SupConResNet', 'TwoCropTransform']
 
 
 def conv3x3(in_planes: int, out_planes: int, stride: int = 1, groups: int = 1, dilation: int = 1) -> nn.Conv2d:
@@ -289,6 +289,21 @@ def resnet101(**kwargs: Any) -> ResNet:
 
 def resnet152(**kwargs: Any) -> ResNet:
     return ResNet(Bottleneck, [3, 8, 36, 3], 'ResNet_152', **kwargs)
+
+
+def resnet(model_depth: int, **kwargs: Any) -> ResNet:
+    assert model_depth in [18, 34, 50, 101, 152]
+    if model_depth == 18:
+        model = resnet18(**kwargs)
+    elif model_depth == 34:
+        model = resnet34(**kwargs)
+    elif model_depth == 50:
+        model = resnet50(**kwargs)
+    elif model_depth == 101:
+        model = resnet101(**kwargs)
+    elif model_depth == 152:
+        model = resnet152(**kwargs)
+    return model
 
 
 def resnet_encoder18(**kwargs: Any) -> ResNet:

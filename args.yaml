@@ -1,5 +1,6 @@
-device: 1 # cuda device to use, i.e. 0 or 0,1,2,3 or cpu'
+device: 0 # cuda device to use, i.e. 0 or 0,1,2,3 or cpu'
 method: ce
+model_depth: 34
 n_channels: 1
 n_classes: 4
 load_model: false # initial weights path, "false" means not load model weight
@@ -8,19 +9,19 @@ batch_size: 128
 optimizer: RMSprop
 lr: 0.0001 # learning rate
 val_percent: 0.2 # Part of the data that is used as validation (0.0-1.0)
-img_size: 51
+img_size: 45
 save_cp: true # whether save checkpoints
 load_optim: false # load optimizer from .pth file
 load_scheduler: false # load scheduler from .pth file
 dir_img: '/nfs3-p1/zsxm/dataset/aorta_classify_ct_-100_500/'
-info: '修正数据集后第一次训练'
+info: '整理好数据集后，使用中位数和众数尺寸45进行交叉熵训练'
 flag_3d: false
 depth_3d: 7
 step_3d: 1
 residual_3d: false
 norm_encoder_output: true
-classifier_epochs: 30
+classifier_epochs: 50
 classifier_lr: 0.001
 temperature: 0.1
-entire: True
 load_encoder: false #details/checkpoints/SupCon/11-05_21:32:21/Net_best.pth
+entire: True

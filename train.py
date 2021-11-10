@@ -39,6 +39,7 @@ torch.backends.cudnn.benchmark = True # faster convolutions, but more memory
 
 """************************************************** Cross Entropy **************************************************"""
 def create_net(device,
+               model_depth=34,
                n_channels=1,
                n_classes=4,
                load_model=False,
@@ -49,9 +50,9 @@ def create_net(device,
     args = SimpleNamespace(**kwargs)
 
     if flag_3d:
-        net = generate_model(34, n_channels=n_channels, n_classes=n_classes, conv1_t_size=3)
+        net = generate_model(model_depth, n_channels=n_channels, n_classes=n_classes, conv1_t_size=3)
     else:
-        net = resnet34(n_channels=n_channels, n_classes=n_classes, entire=args.entire)
+        net = resnet(model_depth, n_channels=n_channels, n_classes=n_classes, entire=args.entire)
 
     train_log.info('**********************************************************************\n'
                  f'Network: {net.net_name}\n'
@@ -63,7 +64,7 @@ def create_net(device,
         net.load_state_dict(torch.load(load_model, map_location=device))
         train_log.info(f'Model loaded from {load_model}')
     elif load_encoder:
-        sup = SupConResNet(n_channels=n_channels, name='resnet34', head='mlp', feat_dim=128)
+        sup = SupConResNet(n_channels=n_channels, name=f'resnet{model_depth}', head='mlp', feat_dim=128)
         sup.load_state_dict(torch.load(load_encoder, map_location=device))
         net.encoder = sup.encoder
         train_log.info(f'Model encoder loaded from {load_encoder}')
@@ -195,6 +196,8 @@ def train_net(net,
         optimizer = optim.RMSprop(net.parameters() if args.entire else module.fc.parameters(), lr=lr, weight_decay=1e-8, momentum=0.9)
     elif args.optimizer.lower() == 'adam':
         optimizer = optim.Adam(net.parameters() if args.entire else module.fc.parameters(), lr=lr)
+    elif args.optimizer.lower() == 'nadam':
+        optimizer = optim.NAdam(net.parameters() if args.entire else module.fc.parameters(), lr=lr)
     else:
         raise NotImplementedError(f'optimizer not supported: {args.optimizer}')
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=10, factor=0.1, cooldown=1, min_lr=1e-8, verbose=True)
@@ -318,6 +321,7 @@ def train_net(net,
 
 """************************************************** Supervised Contrastive **************************************************"""
 def create_supcon(device,
+                  model_depth=34,
                   n_channels=1,
                   norm_encoder_output=False,
                   load_model=False,
@@ -327,7 +331,7 @@ def create_supcon(device,
 
     args = SimpleNamespace(**kwargs)
 
-    net = SupConResNet(n_channels=n_channels, name='resnet34', head='mlp', feat_dim=128, norm_encoder_output=norm_encoder_output)
+    net = SupConResNet(n_channels=n_channels, name=f'resnet{model_depth}', head='mlp', feat_dim=128, norm_encoder_output=norm_encoder_output)
 
     train_log.info('**********************************************************************\n'
                  f'Network: {net.__class__.__name__}+{net.name}\n'
@@ -408,6 +412,8 @@ def train_supcon(net,
         optimizer = optim.RMSprop(net.parameters(), lr=lr, weight_decay=1e-8, momentum=0.9)
     elif args.optimizer.lower() == 'adam':
         optimizer = optim.Adam(net.parameters(), lr=lr)
+    elif args.optimizer.lower() == 'nadam':
+        optimizer = optim.NAdam(net.parameters() if args.entire else module.fc.parameters(), lr=lr)
     else:
         raise NotImplementedError(f'optimizer not supported: {args.optimizer}')
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=10, factor=0.1, cooldown=1, min_lr=1e-8, verbose=True)
@@ -495,13 +501,13 @@ def train_supcon(net,
     # Train linear classifier
     train_log.info(f'Train Supcon done at {time.strftime("%m-%d_%H:%M:%S", time.localtime())}! Prepare to train linear classifier...')
     module.load_state_dict(torch.load(os.path.join(dir_checkpoint, 'Net_best.pth'), map_location=device))
-    classifier = resnet34(n_channels=args.n_channels, n_classes=args.n_classes, entire=False, encoder=module.encoder)
+    classifier = resnet(args.model_depth, n_channels=args.n_channels, n_classes=args.n_classes, entire=False, encoder=module.encoder)
     classifier.to(device=device)
     if torch.cuda.device_count() > 1:
         classifier = nn.DataParallel(classifier)
         train_log.info(f'torch.cuda.device_count:{torch.cuda.device_count()}, Use nn.DataParallel')
     args.entire = False
-    train_net(classifier, device, args.classifier_epochs, batch_size, args.classifier_lr, img_size, save_cp, dir_img=dir_img, flag_3d=flag_3d, info=info+':分类器训练', **vars(args))
+    train_net(classifier, device, args.classifier_epochs, batch_size, args.classifier_lr, img_size, True, dir_img=dir_img, flag_3d=flag_3d, info=info+':分类器训练', **vars(args))
 
     return dir_checkpoint
 
