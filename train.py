@@ -300,6 +300,9 @@ def train_net(net,
 
     torch.save(optimizer.state_dict(), dir_checkpoint + f'Optimizer.pth')
     torch.save(scheduler.state_dict(), dir_checkpoint + f'lrScheduler.pth')
+    if not save_cp:
+        torch.save(module.state_dict(), dir_checkpoint + 'Net_last.pth')
+        train_log.info('Last model saved !')
 
     # print PR-curve
     train_log.info('Train done! Eval best net and draw PR-curve...')
@@ -495,6 +498,9 @@ def train_supcon(net,
 
     torch.save(optimizer.state_dict(), dir_checkpoint + f'Optimizer.pth')
     torch.save(scheduler.state_dict(), dir_checkpoint + f'lrScheduler.pth')
+    if not save_cp:
+        torch.save(module.state_dict(), dir_checkpoint + 'Net_last.pth')
+        train_log.info('Last model saved !')
 
     writer.close()
 
