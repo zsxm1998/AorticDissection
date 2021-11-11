@@ -553,7 +553,7 @@ if __name__ == '__main__':
             raise NotImplementedError(f'method not supported: {args["method"]}')
     except KeyboardInterrupt:
         module = net.module if isinstance(net, nn.DataParallel) else net
-        torch.save(module.state_dict(), f'details/checkpoints/{module.__class__.__name__}_INTERRUPTED.pth')
+        torch.save(module.state_dict(), f'details/checkpoints/{module.__class__.__name__}_{time.strftime("%m-%d_%H:%M:%S", time.localtime())}_INTERRUPTED.pth')
         train_log.info('Saved interrupt')
         try:
             sys.exit(0)
