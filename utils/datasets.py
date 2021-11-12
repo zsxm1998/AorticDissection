@@ -141,7 +141,7 @@ class AortaDataset3D(Dataset):
                     self.datas.append([[join(img_dir, label, img) for img in group_list], i])
                 # self.datas.append([[join(img_dir, label, img_list[k]) for k in range(j, j + (depth-1)*step+1)], i])
         train_log = logging.getLogger('train_log')
-        train_log.info(f'Creating dataset with {len(self.datas)} examples. Depth:{depth}, Step:{step}')
+        train_log.info(f'Creating dataset with {len(self.datas)} examples. Depth:{depth}, Step:{step}, Residual:{residual}')
 
     def __len__(self):
         return len(self.datas)
@@ -150,14 +150,22 @@ class AortaDataset3D(Dataset):
         label = torch.tensor(self.datas[i][1], dtype=torch.long)
         img_path_list = self.datas[i][0]
         img_list = []
+        # for img_path in img_path_list:
+        #     img = Image.open(img_path)
+        #     img = self.transform(img)
+        #     if self.residual and img_list:
+        #         res = img - img_list[-1]
+        #         res = (res + 1) / 2
+        #         img_list.append(res)
+        #     img_list.append(img)
         for img_path in img_path_list:
-            img = Image.open(img_path)
-            img = self.transform(img)
-            if self.residual and img_list:
-                res = img - img_list[-1]
+            img_list.append(Image.open(img_path))
+        img_list = self.transform(img_list)
+        if self.residual:
+            for i in range(1, len(img_list)):
+                res = img_list[i] - img_list[i-1]
                 res = (res + 1) / 2
                 img_list.append(res)
-            img_list.append(img)
         imgs = torch.stack(img_list, dim=1)
         return imgs, label
 

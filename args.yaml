@@ -1,26 +1,26 @@
-device: 2 # cuda device to use, i.e. 0 or 0,1,2,3 or cpu'
-method: SupCon
+device: 1 # cuda device to use, i.e. 0 or 0,1,2,3 or cpu'
+method: CE
 model_depth: 34
 n_channels: 1
 n_classes: 4
 load_model: false # initial weights path, "false" means not load model weight
-epochs: 2000
+epochs: 50
 early_stopping: 100
-batch_size: 1200
+batch_size: 128
 optimizer: RMSprop
-lr: 0.5 # learning rate
+lr: 0.0001 # learning rate
 val_percent: 0.2 # Part of the data that is used as validation (0.0-1.0)
 img_size: 81
-save_cp: false # whether save checkpoints
+save_cp: true # whether save checkpoints
 load_optim: false # load optimizer from .pth file
 load_scheduler: false # load scheduler from .pth file
 dir_img: '/nfs3-p1/zsxm/dataset/aorta_classify_ct_-100_500/'
-info: 'size 81, SupCon'
-flag_3d: false
-depth_3d: 7
+info: 'ce, 3d depth=3, step=1, residual=true, 统一每层为相同的transform后第一次训练'
+flag_3d: true
+depth_3d: 3
 step_3d: 1
-residual_3d: false
-norm_encoder_output: true
+residual_3d: true
+norm_encoder_output: false
 classifier_epochs: 20
 classifier_lr: 0.001
 temperature: 0.1

@@ -23,13 +23,14 @@ class LevelFilter(Filter):
 train_log = logging.getLogger('train_log')  # 这里用getLogger而不用Logger类的构造函数，可以让在其他地方getLogger同名的logger时获取到这个logger，不用重新配置
 train_log.setLevel(logging.DEBUG)
 train_log.propagate = False # 防止向上传播导致root logger也打印log
+train_log.train_time_str = time.strftime("%m-%d_%H:%M:%S", time.localtime())
 
 stdf = StreamHandler(sys.stdout)
 stdf.addFilter(LevelFilter('std_filter', logging.INFO))
 stdf.setFormatter(Formatter('[%(levelname)s]: %(message)s'))
 train_log.addHandler(stdf)
 
-filef = FileHandler(f'{log_dir}/log_train_{time.strftime("%m-%d_%H:%M:%S", time.localtime())}.txt', 'w')
+filef = FileHandler(f'{log_dir}/log_train_{train_log.train_time_str}.txt', 'w')
 filef.addFilter(LevelFilter('file_filter', logging.INFO))
 filef.setFormatter(Formatter('[%(levelname)s %(asctime)s] %(message)s', "%Y%m%d-%H:%M:%S"))
 train_log.addHandler(filef)

@@ -27,6 +27,7 @@ from models.resnet3d import generate_model
 from utils.datasets import AortaDataset3D, LabelSampler
 from models.SupCon import *
 from models.losses import SupConLoss
+from utils import transforms as MT
 
 warnings.filterwarnings("ignore")
 np.random.seed(63910)
@@ -97,24 +98,38 @@ def train_net(net,
     module = net.module if isinstance(net, nn.DataParallel) else net
     
     os.makedirs(dir_checkpoint, exist_ok=True)
-    train_time_str = time.strftime("%m-%d_%H:%M:%S", time.localtime())
-    dir_checkpoint = os.path.join(dir_checkpoint, train_time_str + '/')
-    writer = SummaryWriter(log_dir=f'details/runs/{train_time_str}_{module.net_name}_LR_{lr}_BS_{batch_size}_ImgSize_{img_size}')
+    dir_checkpoint = os.path.join(dir_checkpoint, train_log.train_time_str + '/')
+    writer = SummaryWriter(log_dir=f'details/runs/{train_log.train_time_str}_{module.net_name}_LR_{lr}_BS_{batch_size}_ImgSize_{img_size}')
 
-    train_transform = T.Compose([
-        T.Resize(img_size), # 缩放图片(Image)，保持长宽比不变，最短边为img_size像素
-        T.CenterCrop(img_size), # 从图片中间切出img_size*img_size的图片
-        T.RandomChoice([T.RandomHorizontalFlip(), T.RandomVerticalFlip()]),
-        T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.7),
-        T.RandomApply([T.RandomRotation(45, T.InterpolationMode.BILINEAR)], p=0.4),
-        T.ToTensor(), # 将图片(Image)转成Tensor，归一化至[0, 1]
-    ])
-    val_transform = T.Compose([
-        T.Resize(img_size), # 缩放图片(Image)，保持长宽比不变，最短边为img_size像素
-        T.CenterCrop(img_size), # 从图片中间切出img_size*img_size的图片
-        T.ToTensor(), # 将图片(Image)转成Tensor，归一化至[0, 1]
-        #T.Normalize(mean=[.5], std=[.5]) # 标准化至[-1, 1]，规定均值和标准差
-    ])
+    if flag_3d:
+        train_transform = T.Compose([
+            MT.Resize3D(img_size),
+            MT.CenterCrop3D(img_size), 
+            T.RandomChoice([MT.RandomHorizontalFlip3D(), MT.RandomVerticalFlip3D()]),
+            T.RandomApply([MT.ColorJitter3D(0.4, 0.4, 0.4, 0.1)], p=0.7),
+            T.RandomApply([MT.RandomRotation3D(45, T.InterpolationMode.BILINEAR)], p=0.4),
+            MT.ToTensor3D(), 
+        ])
+        val_transform = T.Compose([
+            MT.Resize3D(img_size),
+            MT.CenterCrop3D(img_size),
+            MT.ToTensor3D(),
+        ])
+    else:
+        train_transform = T.Compose([
+            T.Resize(img_size),
+            T.CenterCrop(img_size),
+            T.RandomChoice([T.RandomHorizontalFlip(), T.RandomVerticalFlip()]),
+            T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.7),
+            T.RandomApply([T.RandomRotation(45, T.InterpolationMode.BILINEAR)], p=0.4),
+            T.ToTensor(),
+        ])
+        val_transform = T.Compose([
+            T.Resize(img_size), # 缩放图片(Image)，保持长宽比不变，最短边为img_size像素
+            T.CenterCrop(img_size), # 从图片中间切出img_size*img_size的图片
+            T.ToTensor(), # 将图片(Image)转成Tensor，归一化至[0, 1]
+            #T.Normalize(mean=[.5], std=[.5]) # 标准化至[-1, 1]，规定均值和标准差
+        ])
 
     def pil_loader(path):
         with open(path, 'rb') as f:
@@ -315,6 +330,7 @@ def train_net(net,
     # print PR-curve
     train_log.info('Train done! Eval best net and draw PR-curve...')
     args.load_model = os.path.join(dir_checkpoint, 'Net_best.pth')
+    args.flag_3d = flag_3d
     net = create_net(device, **vars(args))
     val_score, val_loss, PR_curve_img = eval_net(net, val_loader, n_val, device, final=True, PR_curve_save_dir=dir_checkpoint)
     writer.add_images('PR-curve', np.array(Image.open(PR_curve_img)), dataformats='HWC')
@@ -385,9 +401,8 @@ def train_supcon(net,
     module = net.module if isinstance(net, nn.DataParallel) else net
     
     os.makedirs(dir_checkpoint, exist_ok=True)
-    train_time_str = time.strftime("%m-%d_%H:%M:%S", time.localtime())
-    dir_checkpoint = os.path.join(dir_checkpoint, train_time_str + '/')
-    writer = SummaryWriter(log_dir=f'details/runs/{train_time_str}_{module.__class__.__name__}+{module.name}_LR_{lr}_BS_{batch_size}_ImgSize_{img_size}')
+    dir_checkpoint = os.path.join(dir_checkpoint, train_log.train_time_str + '/')
+    writer = SummaryWriter(log_dir=f'details/runs/{train_log.train_time_str}_{module.__class__.__name__}+{module.name}_LR_{lr}_BS_{batch_size}_ImgSize_{img_size}')
 
     train_transform = T.Compose([
         T.Resize(img_size), # 缩放图片(Image)，保持长宽比不变，最短边为img_size像素
