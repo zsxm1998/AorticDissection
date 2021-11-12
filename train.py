@@ -21,7 +21,7 @@ from torchvision.datasets import ImageFolder
 from torchvision import transforms as T
 from PIL import Image
 
-from utils.eval import eval_net
+from utils.eval import eval_net, eval_supcon
 from utils.print_log import train_log
 from models.resnet3d import generate_model
 from utils.datasets import AortaDataset3D, LabelSampler
@@ -213,6 +213,7 @@ def train_net(net,
 
     global_step = 0
     best_val_score = -1 #float('inf') if module.n_classes > 1 else -1
+    useless_epoch_count = 0
     for epoch in range(epochs):
         net.train()
         epoch_loss = 0
@@ -290,6 +291,9 @@ def train_net(net,
                 train_log.info('Created checkpoint directory')
             torch.save(module.state_dict(), dir_checkpoint + 'Net_best.pth')
             train_log.info('Best model saved !')
+            useless_epoch_count = 0
+        else:
+            useless_epoch_count += 1
         
         if save_cp:
             if not os.path.exists(dir_checkpoint):
@@ -297,6 +301,10 @@ def train_net(net,
                 train_log.info('Created checkpoint directory')
             torch.save(module.state_dict(), dir_checkpoint + f'Net_epoch{epoch + 1}.pth')
             train_log.info(f'Checkpoint {epoch + 1} saved !')
+
+        if args.early_stopping and useless_epoch_count == args.early_stopping:
+            train_log.info(f'There are {useless_epoch_count} useless epochs! Early Stop Training!')
+            break
 
     torch.save(optimizer.state_dict(), dir_checkpoint + f'Optimizer.pth')
     torch.save(scheduler.state_dict(), dir_checkpoint + f'lrScheduler.pth')
@@ -316,6 +324,7 @@ def train_net(net,
     else:
         train_log.info('Validation binary cross entropy: {}'.format(val_loss))
         train_log.info('Validation Area Under roc Curve(AUC): {}'.format(val_score))
+    train_log.info(info)
 
     writer.close()
     return dir_checkpoint
@@ -388,21 +397,32 @@ def train_supcon(net,
         T.RandomApply([T.RandomRotation(45, T.InterpolationMode.BILINEAR)], p=0.4),
         T.ToTensor(), # 将图片(Image)转成Tensor，归一化至[0, 1]
     ])
+    val_transform = T.Compose([
+        T.Resize(img_size), # 缩放图片(Image)，保持长宽比不变，最短边为img_size像素
+        T.CenterCrop(img_size), # 从图片中间切出img_size*img_size的图片
+        T.ToTensor(), # 将图片(Image)转成Tensor，归一化至[0, 1]
+        #T.Normalize(mean=[.5], std=[.5]) # 标准化至[-1, 1]，规定均值和标准差
+    ])
 
     if flag_3d:
         train = AortaDataset3D(os.path.join(dir_img, 'train'), transform=TwoCropTransform(train_transform), depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
+        val = AortaDataset3D(os.path.join(dir_img, 'val'), transform=val_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
     else:
         train = ImageFolder(os.path.join(dir_img, 'train'), transform=TwoCropTransform(train_transform), loader=lambda path: Image.open(path))
+        val = ImageFolder(os.path.join(dir_img, 'val'), transform=val_transform, loader=lambda path: Image.open(path))
     
     lsampler = None#LabelSampler(train)
     n_train = len(train) #len(lsampler)
+    n_val = len(val)
     train_loader = DataLoader(train, batch_size=batch_size, sampler=lsampler, shuffle=lsampler is None, num_workers=8, pin_memory=True)
+    val_loader = DataLoader(val, batch_size=batch_size, shuffle=False, num_workers=8, pin_memory=True, drop_last=False)
 
     train_log.info(f'''Starting training SupCon:
         Epochs:             {epochs}
         Batch size:         {batch_size}
         Learning rate:      {lr}
         Training size:      {n_train}
+        Validation size:    {n_val}
         Checkpoints:        {save_cp}
         Device:             {device.type}
         Images size:        {img_size}
@@ -428,7 +448,8 @@ def train_supcon(net,
     criterion = SupConLoss(temperature=args.temperature) #.to(device)
 
     global_step = 0
-    best_epoch_loss = float('inf')
+    best_val_score = float('inf')
+    useless_epoch_count = 0
     for epoch in range(epochs):
         net.train()
         epoch_loss = 0
@@ -446,7 +467,7 @@ def train_supcon(net,
                 imgs = imgs.to(device=device, dtype=torch.float32)
                 true_categories = true_categories.to(device=device, dtype=torch.long)
 
-                features = net(imgs)
+                features, _ = net(imgs)
                 f1, f2 = torch.split(features, [bsz, bsz], dim=0)
                 features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
                 if args.method.lower() == 'supcon':
@@ -475,19 +496,26 @@ def train_supcon(net,
             tag = tag.replace('.', '/')
             writer.add_histogram('weights/' + tag, value.data.cpu().numpy(), global_step)
             writer.add_histogram('grads/' + tag, value.grad.data.cpu().numpy(), global_step)
-        scheduler.step(epoch_loss)
+        val_score = eval_supcon(net, val_loader, n_val, device, args.n_classes)
+        scheduler.step(val_score)
         writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], global_step)
+
+        train_log.info('Validation inner_dis/outer_dis ratio: {}'.format(val_score))
+        writer.add_scalar('dis_ratio/val', val_score, global_step)
         
         if not flag_3d:
             writer.add_images('images/origin', imgs, global_step)
 
-        if epoch_loss < best_epoch_loss: #val_score < best_val_score if module.n_classes > 1 else val_score > best_val_score:
-            best_epoch_loss = epoch_loss
+        if val_score < best_val_score: #val_score < best_val_score if module.n_classes > 1 else val_score > best_val_score:
+            best_val_score = val_score
             if not os.path.exists(dir_checkpoint):
                 os.makedirs(dir_checkpoint)
                 train_log.info('Created checkpoint directory')
             torch.save(module.state_dict(), dir_checkpoint + 'Net_best.pth')
             train_log.info('Best model saved !')
+            useless_epoch_count = 0
+        else:
+            useless_epoch_count += 1
         
         if save_cp:
             if not os.path.exists(dir_checkpoint):
@@ -496,15 +524,28 @@ def train_supcon(net,
             torch.save(module.state_dict(), dir_checkpoint + f'Net_epoch{epoch + 1}.pth')
             train_log.info(f'Checkpoint {epoch + 1} saved !')
 
+        if args.early_stopping and useless_epoch_count == args.early_stopping:
+            train_log.info(f'There are {useless_epoch_count} useless epochs! Early Stop Training!')
+            break
+
     torch.save(optimizer.state_dict(), dir_checkpoint + f'Optimizer.pth')
     torch.save(scheduler.state_dict(), dir_checkpoint + f'lrScheduler.pth')
     if not save_cp:
         torch.save(module.state_dict(), dir_checkpoint + 'Net_last.pth')
         train_log.info('Last model saved !')
 
+    # print t-SNE
+    train_log.info('Train done! Eval best net and draw t-SNE result...')
+    args.load_model = os.path.join(dir_checkpoint, 'Net_best.pth')
+    net = create_supcon(device, **vars(args))
+    val_score, TSNE_img = eval_supcon(net, val_loader, n_val, device, args.n_classes, final=True, TSNE_save_dir=dir_checkpoint)
+    writer.add_images('t-SNE', np.array(Image.open(TSNE_img)), dataformats='HWC')
+    train_log.info('Validation inner_dis/outer_dis ratio: {}'.format(val_score))
+
     writer.close()
 
     # Train linear classifier
+    train_log.info(info)
     train_log.info(f'Train Supcon done at {time.strftime("%m-%d_%H:%M:%S", time.localtime())}! Prepare to train linear classifier...')
     module.load_state_dict(torch.load(os.path.join(dir_checkpoint, 'Net_best.pth'), map_location=device))
     classifier = resnet(args.model_depth, n_channels=args.n_channels, n_classes=args.n_classes, entire=False, encoder=module.encoder)

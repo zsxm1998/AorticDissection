@@ -3,9 +3,11 @@ import logging
 import numpy as np
 import torch
 import torch.nn.functional as F
+import torch.linalg as LA
 from tqdm import tqdm
 from sklearn import metrics, preprocessing
 import matplotlib.pyplot as plt
+from MulticoreTSNE import MulticoreTSNE as TSNE
 
 
 def eval_net(net, val_loader, n_val, device, final=False, PR_curve_save_dir=None):
@@ -81,3 +83,50 @@ def eval_net(net, val_loader, n_val, device, final=False, PR_curve_save_dir=None
         train_log.info('\n'+metrics.classification_report(true_list, pred_list, target_names=['negative', 'positive'], digits=4))
         return ( metrics.roc_auc_score(true_list, pred_ori_list), tot_loss / n_val ) if not final \
             else ( metrics.roc_auc_score(true_list, pred_ori_list), tot_loss / n_val, os.path.join(PR_curve_save_dir, 'PR-curve.png') ) #return tot / n_val if not final else os.path.join(PR_curve_save_dir, 'PR-curve.png')
+
+
+
+def eval_supcon(net, val_loader, n_val, device, n_classes, final=False, TSNE_save_dir=None):
+    train_log = logging.getLogger('train_log')
+    net.eval()
+    num_val_batches = len(val_loader)  # the number of batch
+
+    true_list = []
+    r_list = []
+    for imgs, true_categories in tqdm(val_loader, total=num_val_batches, desc='Validation round', unit='batch', leave=False):
+        imgs = imgs.to(device=device, dtype=torch.float32)
+        true_categories = true_categories.to(device=device, dtype=torch.long)
+        true_list.append(true_categories)
+
+        with torch.no_grad():
+            _, r = net(imgs)
+        r_list.append(r)
+
+    labels = torch.cat(true_list, dim=0)
+    reprs = torch.cat(r_list, dim=0)
+
+    n_classes = 2 if n_classes == 1 else n_classes
+    mean_list = []
+    inner_dis = 0
+    for k in range(n_classes):
+        reprs_k = reprs[labels == k]
+        reprs_k_mean = torch.mean(reprs_k, dim=0, keepdim=True)
+        mean_list.append(reprs_k_mean)
+        inner_dis += torch.mean(LA.norm(reprs_k-reprs_k_mean, dim=1)).item()
+    inner_dis /= n_classes
+    mean_matrix = torch.cat(mean_list, dim=0)
+    outer_dis = torch.mean(F.pdist(mean_matrix)).item()
+    
+    net.train()
+    if final:
+        labels = labels.cpu().numpy()
+        reprs = reprs.cpu().numpy()
+        reprs_tsne = TSNE(n_jobs=8).fit_transform(reprs)
+        vis_x = reprs_tsne[:, 0]
+        vis_y = reprs_tsne[:, 1]
+        plt.scatter(vis_x, vis_y, c=labels, cmap=plt.cm.get_cmap("jet", n_classes), marker='.')
+        plt.colorbar(ticks=range(n_classes))
+        plt.savefig(os.path.join(TSNE_save_dir, 'TSNE.png'))
+        return inner_dis / outer_dis, os.path.join(TSNE_save_dir, 'TSNE.png')
+
+    return inner_dis / outer_dis
