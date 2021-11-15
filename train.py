@@ -569,7 +569,7 @@ def train_supcon(net,
         classifier = nn.DataParallel(classifier)
         train_log.info(f'torch.cuda.device_count:{torch.cuda.device_count()}, Use nn.DataParallel')
     args.entire = False
-    train_net(classifier, device, args.classifier_epochs, batch_size, args.classifier_lr, img_size, True, dir_img=dir_img, flag_3d=flag_3d, info=info+':分类器训练', **vars(args))
+    train_net(classifier, device, args.classifier_epochs, args.classifier_batch_size, args.classifier_lr, img_size, True, dir_img=dir_img, flag_3d=flag_3d, info=info+':分类器训练', **vars(args))
 
     return dir_checkpoint
 

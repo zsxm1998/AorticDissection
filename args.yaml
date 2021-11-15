@@ -1,11 +1,11 @@
-device: 1 # cuda device to use, i.e. 0 or 0,1,2,3 or cpu'
+device: 2 # cuda device to use, i.e. 0 or 0,1,2,3 or cpu'
 method: CE
 model_depth: 34
 n_channels: 1
 n_classes: 4
 load_model: false # initial weights path, "false" means not load model weight
-epochs: 50
-early_stopping: 100
+epochs: 20
+early_stopping: 0
 batch_size: 128
 optimizer: RMSprop
 lr: 0.0001 # learning rate
@@ -15,14 +15,15 @@ save_cp: true # whether save checkpoints
 load_optim: false # load optimizer from .pth file
 load_scheduler: false # load scheduler from .pth file
 dir_img: '/nfs3-p1/zsxm/dataset/aorta_classify_ct_-100_500/'
-info: 'ce, 3d depth=3, step=1, residual=true, 统一每层为相同的transform后第一次训练'
-flag_3d: true
+info: 'size 81, SupCon不归一化encoder:最后一个检查点的分类器训练'
+flag_3d: false
 depth_3d: 3
 step_3d: 1
 residual_3d: true
 norm_encoder_output: false
 classifier_epochs: 20
-classifier_lr: 0.001
+classifier_batch_size: 128
+classifier_lr: 0.0001
 temperature: 0.1
-load_encoder: false #details/checkpoints/SupCon/11-10_15:17:28/Net_best.pth
-entire: true
+load_encoder: details/checkpoints/SupCon/11-12_13:40:42/Net_last.pth
+entire: false
