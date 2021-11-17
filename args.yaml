@@ -15,11 +15,11 @@ save_cp: true # whether save checkpoints
 load_optim: false # load optimizer from .pth file
 load_scheduler: false # load scheduler from .pth file
 dir_img: '/nfs3-p1/zsxm/dataset/aorta_classify_ct_-100_500/'
-info: '交叉熵增加权重'
-flag_3d: false
-depth_3d: 3
+info: 'center 方式3d第一次训练'
+flag_3d: true
+depth_3d: 7
 step_3d: 1
-residual_3d: true
+residual_3d: false
 norm_encoder_output: false
 classifier_epochs: 20
 classifier_batch_size: 128

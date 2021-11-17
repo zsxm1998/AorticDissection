@@ -120,7 +120,7 @@ class AortaDataset3D(Dataset):
             il_len = len(img_list)
             for j in range(il_len - (depth-1)*step):
                 nl = re.split('[_.]', img_list[j])
-                assert len(nl) == 4, 'Format of image file name is wrong.'
+                assert len(nl) == 4, f'Format of image file name "{img_list[j]}" is wrong.'
                 # nld = re.split('[_.]', img_list[j + (depth-1)*step])
                 # assert len(nl) == 4 and len(nld) == 4, 'Format of image file name is wrong.'
                 # if nl[0] != nld[0] or nl[1] != nld[1] or int(nl[2])+(depth-1)*step != int(nld[2]):
@@ -129,7 +129,7 @@ class AortaDataset3D(Dataset):
                 group_list = []
                 for k in range(j, j + (depth-1)*step+1):
                     nlk = re.split('[_.]', img_list[k])
-                    assert len(nlk) == 4, 'Format of image file name is wrong.'
+                    assert len(nlk) == 4, f'Format of image file name "{img_list[k]}" is wrong.'
                     if nl[0] != nlk[0] or nl[1] != nlk[1]:
                         break
                     if int(nl[2]) + s*step == int(nlk[2]):
@@ -258,3 +258,86 @@ class LabelSampler(Sampler[int]):
 
     def __len__(self):
         return self.shortest_label_len * len(self.unique_labels)
+
+
+class AortaDataset3DCenter(Dataset):
+    def __init__(self, img_dir, transform, depth, step=1, residual=False):
+        self.img_dir = img_dir
+        self.transform = transform
+        assert depth % 2 == 1, 'depth should be odd number.'
+        self.depth = depth
+        self.step = step
+        self.residual = residual
+        self.labels = sorted([label for label in listdir(img_dir) if isdir(join(img_dir, label))])
+        self.datas = []
+        for i, label in enumerate(self.labels):
+            img_list = sorted(list(filter(lambda x: not x.startswith('.') and isfile(join(img_dir, label, x)), listdir(join(img_dir, label)))))
+            il_len = len(img_list)
+            for j in range(il_len):
+                nl = re.split('[_.]', img_list[j])
+                assert len(nl) == 4 or len(nl) == 5, f'Format of image file name "{img_list[j]}" is wrong.'
+                if len(nl) == 5:
+                    continue
+                group_list = [img_list[j]]
+                half = s = depth // 2
+                for k in range(j-1, j-step*(half)-1, -1):
+                    if k < 0 or k >= il_len:
+                        for _ in range(s):
+                            group_list.insert(0, group_list[0])
+                        break
+                    nlk = re.split('[_.]', img_list[k])
+                    if nl[0] != nlk[0] or nl[1] != nlk[1]:
+                        for _ in range(s):
+                            group_list.insert(0, group_list[0])
+                        break
+                    offset = int(nl[2]) - int(nlk[2])
+                    if offset % step == 0:
+                        for _ in range(offset//step-(half-s)):
+                            group_list.insert(0, img_list[k])
+                            s -= 1
+                            if s == 0:
+                                break
+                    if s == 0:
+                        break
+                s = depth // 2
+                for k in range(j+1, j+step*(half)+1):
+                    if k < 0 or k >= il_len:
+                        for _ in range(s):
+                            group_list.insert(0, group_list[0])
+                        break
+                    nlk = re.split('[_.]', img_list[k])
+                    if nl[0] != nlk[0] or nl[1] != nlk[1]:
+                        for _ in range(s):
+                            group_list.append(group_list[-1])
+                        break
+                    offset = int(nlk[2]) - int(nl[2])
+                    if offset % step == 0:
+                        for _ in range(offset//step-(half-s)):
+                            group_list.append(img_list[k])
+                            s -= 1
+                            if s == 0:
+                                break
+                    if s == 0:
+                        break
+                assert len(group_list) == depth, f'depth wrong: {img_list[j]}'
+                self.datas.append([[join(img_dir, label, img) for img in group_list], i])
+        train_log = logging.getLogger('train_log')
+        train_log.info(f'Creating dataset with {len(self.datas)} examples. Depth:{depth}, Step:{step}, Residual:{residual}')
+
+    def __len__(self):
+        return len(self.datas)
+
+    def __getitem__(self, i):
+        label = torch.tensor(self.datas[i][1], dtype=torch.long)
+        img_path_list = self.datas[i][0]
+        img_list = []
+        for img_path in img_path_list:
+            img_list.append(Image.open(img_path))
+        img_list = self.transform(img_list)
+        if self.residual:
+            for i in range(1, len(img_list)):
+                res = img_list[i] - img_list[i-1]
+                res = (res + 1) / 2
+                img_list.append(res)
+        imgs = torch.stack(img_list, dim=1)
+        return imgs, label

@@ -24,15 +24,15 @@ from PIL import Image
 from utils.eval import eval_net, eval_supcon
 from utils.print_log import train_log
 from models.resnet3d import generate_model
-from utils.datasets import AortaDataset3D, LabelSampler
+from utils.datasets import AortaDataset3D, LabelSampler, AortaDataset3DCenter
 from models.SupCon import *
 from models.losses import SupConLoss
 from utils import transforms as MT
 
 warnings.filterwarnings("ignore")
-np.random.seed(63910)
-torch.manual_seed(53152)
-torch.cuda.manual_seed_all(7987)
+# np.random.seed(63910)
+# torch.manual_seed(53152)
+# torch.cuda.manual_seed_all(7987)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = True # faster convolutions, but more memory
 
@@ -164,8 +164,8 @@ def train_net(net,
     # train = torch.utils.data.Subset(dataset, train_idx)
     # val = torch.utils.data.Subset(dataset, val_idx)
     if flag_3d:
-        train = AortaDataset3D(os.path.join(dir_img, 'train'), transform=train_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
-        val = AortaDataset3D(os.path.join(dir_img, 'val'), transform=val_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
+        train = AortaDataset3DCenter(os.path.join(dir_img, 'train'), transform=train_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
+        val = AortaDataset3DCenter(os.path.join(dir_img, 'val'), transform=val_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
     else:
         train = ImageFolder(os.path.join(dir_img, 'train'), transform=train_transform, loader=lambda path: Image.open(path))
         val = ImageFolder(os.path.join(dir_img, 'val'), transform=val_transform, loader=lambda path: Image.open(path))
