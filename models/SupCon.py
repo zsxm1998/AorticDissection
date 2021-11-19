@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from typing import Type, Any, Callable, Union, List, Optional
 
 
-__all__ = ['resnet', 'ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', 'SupConResNet', 'TwoCropTransform']
+__all__ = ['resnet', 'ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152', 'resnet_encoder', 'SupConResNet', 'TwoCropTransform']
 
 
 def conv3x3(in_planes: int, out_planes: int, stride: int = 1, groups: int = 1, dilation: int = 1) -> nn.Conv2d:
@@ -305,24 +305,38 @@ def resnet(model_depth: int, **kwargs: Any) -> ResNet:
     return model
 
 
-def resnet_encoder18(**kwargs: Any) -> ResNet:
+def resnet_encoder18(**kwargs: Any) -> ResNetEncoder:
     return ResNetEncoder(BasicBlock, [2, 2, 2, 2], **kwargs)
 
 
-def resnet_encoder34(**kwargs: Any) -> ResNet:
+def resnet_encoder34(**kwargs: Any) -> ResNetEncoder:
     return ResNetEncoder(BasicBlock, [3, 4, 6, 3], **kwargs)
 
 
-def resnet_encoder50(**kwargs: Any) -> ResNet:
+def resnet_encoder50(**kwargs: Any) -> ResNetEncoder:
     return ResNetEncoder(Bottleneck, [3, 4, 6, 3], **kwargs)
 
 
-def resnet_encoder101(**kwargs: Any) -> ResNet:
+def resnet_encoder101(**kwargs: Any) -> ResNetEncoder:
     return ResNetEncoder(Bottleneck, [3, 4, 23, 3], **kwargs)
 
 
-def resnet_encoder152(**kwargs: Any) -> ResNet:
+def resnet_encoder152(**kwargs: Any) -> ResNetEncoder:
     return ResNetEncoder(Bottleneck, [3, 8, 36, 3], **kwargs)
+
+def resnet_encoder(model_depth: int, **kwargs: Any) -> ResNetEncoder:
+    assert model_depth in [18, 34, 50, 101, 152], f'model_depth={model_depth}'
+    if model_depth == 18:
+        model = resnet_encoder18(**kwargs)
+    elif model_depth == 34:
+        model = resnet_encoder34(**kwargs)
+    elif model_depth == 50:
+        model = resnet_encoder50(**kwargs)
+    elif model_depth == 101:
+        model = resnet_encoder101(**kwargs)
+    elif model_depth == 152:
+        model = resnet_encoder152(**kwargs)
+    return model
 
 
 model_dict = {
@@ -350,20 +364,20 @@ class LinearBatchNorm(nn.Module):
 
 class SupConResNet(nn.Module):
     """backbone + projection head"""
-    def __init__(self, n_channels=3, name='resnet34', head='mlp', feat_dim=128, norm_encoder_output=False):
+    def __init__(self, n_channels=3, name='resnet34', encoder=None, head='mlp', feat_dim=128, norm_encoder_output=False):
         super(SupConResNet, self).__init__()
         self.n_channels = n_channels
         self.name = name
         self.norm_encoder_output = norm_encoder_output
-        model_fun, dim_in = model_dict[name]
-        self.encoder = model_fun(n_channels=n_channels)
+        model_fun, self.dim_in = model_dict[name]
+        self.encoder = model_fun(n_channels=n_channels) if encoder is None else encoder
         if head == 'linear':
-            self.head = nn.Linear(dim_in, feat_dim)
+            self.head = nn.Linear(self.dim_in, feat_dim)
         elif head == 'mlp':
             self.head = nn.Sequential(
-                nn.Linear(dim_in, dim_in),
+                nn.Linear(self.dim_in, self.dim_in),
                 nn.ReLU(inplace=True),
-                nn.Linear(dim_in, feat_dim)
+                nn.Linear(self.dim_in, feat_dim)
             )
         else:
             raise NotImplementedError(

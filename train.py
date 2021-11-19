@@ -451,7 +451,7 @@ def train_supcon(net,
     elif args.optimizer.lower() == 'adam':
         optimizer = optim.Adam(net.parameters(), lr=lr)
     elif args.optimizer.lower() == 'nadam':
-        optimizer = optim.NAdam(net.parameters() if args.entire else module.fc.parameters(), lr=lr)
+        optimizer = optim.NAdam(net.parameters(), lr=lr)
     else:
         raise NotImplementedError(f'optimizer not supported: {args.optimizer}')
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=10, factor=0.1, cooldown=1, min_lr=1e-8, verbose=True)
@@ -550,9 +550,12 @@ def train_supcon(net,
         train_log.info('Last model saved !')
 
     # print t-SNE
-    train_log.info('Train done! Eval best net and draw t-SNE result...')
-    args.load_model = os.path.join(dir_checkpoint, 'Net_best.pth')
-    net = create_supcon(device, **vars(args))
+    if args.which_supcon.lower() == 'best':
+        train_log.info('Train done! Eval best net and draw t-SNE result...')
+        args.load_model = os.path.join(dir_checkpoint, 'Net_best.pth')
+        net = create_supcon(device, **vars(args))
+    else:
+        train_log.info('Train done! Eval last net and draw t-SNE result...')
     val_score, TSNE_img = eval_supcon(net, val_loader, n_val, device, args.n_classes, final=True, TSNE_save_dir=dir_checkpoint)
     writer.add_images('t-SNE', np.array(Image.open(TSNE_img)), dataformats='HWC')
     train_log.info('Validation inner_dis/outer_dis ratio: {}'.format(val_score))
