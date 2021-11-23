@@ -122,7 +122,7 @@ def combine_train(device,
         optimizer = optim.NAdam([{'params': supcon_module.parameters()}, {'params': fc_module.parameters()}], lr=lr)
     else:
         raise NotImplementedError(f'optimizer not supported: {args.optimizer}')
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=10, factor=0.5, cooldown=1, min_lr=1e-8, verbose=True)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=10, factor=0.1, cooldown=1, min_lr=1e-8, verbose=True)
     if load_optim:
         optimizer.load_state_dict(torch.load(load_optim, map_location=device))
     if load_scheduler:
