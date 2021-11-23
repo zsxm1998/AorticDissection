@@ -1,4 +1,4 @@
-device: 0 # cuda device to use, i.e. 0 or 0,1,2,3 or cpu'
+device: 2 # cuda device to use, i.e. 0 or 0,1,2,3 or cpu'
 method: Supcon
 model_depth: 34
 n_channels: 1
@@ -6,7 +6,7 @@ n_classes: 4
 load_model: false # initial weights path, "false" means not load model weight
 epochs: 200
 early_stopping: 30
-batch_size: 2200
+batch_size: 1400
 optimizer: RMSprop
 lr: 0.001 # learning rate
 val_percent: 0.2 # Part of the data that is used as validation (0.0-1.0)
@@ -14,8 +14,8 @@ img_size: 81
 save_cp: false # whether save checkpoints
 load_optim: false # load optimizer from .pth file
 load_scheduler: false # load scheduler from .pth file
-dir_img: 'datas/aorta_classify_ct_-100_500'
-info: 'Combine训练, lr0.001'
+dir_img: /nfs3-p2/zsxm/dataset/aorta_classify_ct_-100_500/
+info: Combine训练, lr0.001
 flag_3d: false
 depth_3d: 7
 step_3d: 1
