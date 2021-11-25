@@ -1,5 +1,6 @@
 import math
 from functools import partial
+from typing import Sequence
 
 import torch
 import torch.nn as nn
@@ -99,15 +100,13 @@ class Bottleneck(nn.Module):
         return out
 
 
-class ResNet(nn.Module):
+class ResNetEncoder(nn.Module):
 
     def __init__(self,
                  block,
                  layers,
                  block_inplanes,
-                 net_name='ResNet3D_custom',
                  n_channels=3,
-                 n_classes=400,
                  conv1_t_size=7,
                  conv1_t_stride=1,
                  no_max_pool=False,
@@ -116,8 +115,6 @@ class ResNet(nn.Module):
         super().__init__()
 
         self.n_channels = n_channels
-        self.n_classes = n_classes
-        self.net_name = net_name
 
         block_inplanes = [int(x * widen_factor) for x in block_inplanes]
 
@@ -152,7 +149,6 @@ class ResNet(nn.Module):
                                        stride=2)
 
         self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
-        self.fc = nn.Linear(block_inplanes[3] * block.expansion, n_classes)
 
         for m in self.modules():
             if isinstance(m, nn.Conv3d):
@@ -184,6 +180,9 @@ class ResNet(nn.Module):
             else:
                 downsample = nn.Sequential(
                     conv1x1x1(self.in_planes, planes * block.expansion, stride),
+                    nn.BatchNorm3d(planes * block.expansion)
+                    ) if stride == 1 else nn.Sequential(nn.AvgPool3d(stride, stride, ceil_mode=True),
+                    conv1x1x1(self.in_planes, planes * block.expansion, 1),
                     nn.BatchNorm3d(planes * block.expansion))
 
         layers = []
@@ -211,11 +210,44 @@ class ResNet(nn.Module):
         x = self.layer4(x)
 
         x = self.avgpool(x)
-
         x = x.view(x.size(0), -1)
-        x = self.fc(x)
-
         return x
+
+
+class ResNet(nn.Module):
+
+    def __init__(self,
+                 block,
+                 layers,
+                 block_inplanes,
+                 net_name='ResNet3D_custom',
+                 n_channels=3,
+                 n_classes=400,
+                 entire=True,
+                 encoder=None,
+                 conv1_t_size=7,
+                 conv1_t_stride=1,
+                 no_max_pool=False,
+                 shortcut_type='B',
+                 widen_factor=1.0):
+        super().__init__()
+        self.n_channels = n_channels if encoder is None else encoder.n_channels
+        self.n_classes = n_classes
+        self.net_name = net_name
+        self.entire = entire
+
+        self.encoder = ResNetEncoder(block, layers, block_inplanes, n_channels, conv1_t_size, conv1_t_stride, no_max_pool, shortcut_type, widen_factor)
+        self.fc = nn.Linear(int(block_inplanes[3]*widen_factor), n_classes)
+
+    def forward(self, x):
+        if self.entire:
+            x = self.encoder(x)
+        else:
+            self.encoder.eval()
+            with torch.no_grad():
+                x = self.encoder(x)
+            x = x.detach() #这句可不可以去掉？
+        return self.fc(x)
 
 
 def generate_model(model_depth, **kwargs):

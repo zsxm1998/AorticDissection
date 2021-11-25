@@ -256,6 +256,7 @@ class ResNet(nn.Module):
         self.n_classes = n_classes
         self.net_name = net_name
         self.entire = entire
+        
         self.encoder = ResNetEncoder(block, layers, n_channels, zero_init_residual, groups, width_per_group, replace_stride_with_dilation, norm_layer) if encoder is None else encoder
         self.fc = nn.Linear(512 * block.expansion, n_classes)
 

@@ -86,6 +86,10 @@ class SupConLoss(nn.Module):
 
         # loss
         loss = - (self.temperature / self.base_temperature) * mean_log_prob_pos
-        loss = loss.view(anchor_count, batch_size).mean()
+        #loss = loss.view(anchor_count, batch_size).mean()
+        loss = loss.view(anchor_count, batch_size)
+        weight = torch.tensor([12434/6522, 12434/4370, 12424/1149, 12434/393]).to(device)
+        batch_weight = torch.gather(weight.unsqueeze(0).repeat(batch_size, 1), 1, labels.to(device)).detach()
+        loss = ((loss * batch_weight.T).sum(1) / batch_weight.sum()).mean()
 
         return loss
