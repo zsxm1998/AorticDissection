@@ -230,95 +230,99 @@ def train_net(net,
     best_val_score = -1 #float('inf') if module.n_classes > 1 else -1
     useless_epoch_count = 0
     for epoch in range(epochs):
-        net.train()
-        epoch_loss = 0
-        with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
-            for imgs, true_categories in train_loader:
-                global_step += 1
-                assert imgs.shape[1] == module.n_channels, \
-                    f'Network has been defined with {module.n_channels} input channels, ' \
-                    f'but loaded images have {imgs.shape[1]} channels. Please check that ' \
-                    'the images are loaded correctly.'
+        try:
+            net.train()
+            epoch_loss = 0
+            with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
+                for imgs, true_categories in train_loader:
+                    global_step += 1
+                    assert imgs.shape[1] == module.n_channels, \
+                        f'Network has been defined with {module.n_channels} input channels, ' \
+                        f'but loaded images have {imgs.shape[1]} channels. Please check that ' \
+                        'the images are loaded correctly.'
 
-                imgs = imgs.to(device=device, dtype=torch.float32)
-                category_type = torch.float32 if module.n_classes == 1 else torch.long
-                true_categories = true_categories.to(device=device, dtype=category_type)
+                    imgs = imgs.to(device=device, dtype=torch.float32)
+                    category_type = torch.float32 if module.n_classes == 1 else torch.long
+                    true_categories = true_categories.to(device=device, dtype=category_type)
 
-                categories_pred = net(imgs)
-                if module.n_classes > 1:
-                    loss = criterion(categories_pred, true_categories)
-                else:
-                    loss = criterion(categories_pred, true_categories.unsqueeze(1))
-                epoch_loss += loss.item() * imgs.size(0)
-                writer.add_scalar('Loss/train', loss.item(), global_step)
+                    categories_pred = net(imgs)
+                    if module.n_classes > 1:
+                        loss = criterion(categories_pred, true_categories)
+                    else:
+                        loss = criterion(categories_pred, true_categories.unsqueeze(1))
+                    epoch_loss += loss.item() * imgs.size(0)
+                    writer.add_scalar('Loss/train', loss.item(), global_step)
 
-                pbar.set_postfix(**{'loss (batch)': loss.item()})
+                    pbar.set_postfix(**{'loss (batch)': loss.item()})
 
-                optimizer.zero_grad()
-                loss.backward()
-                nn.utils.clip_grad_value_(net.parameters(), 0.1)
-                optimizer.step()
+                    optimizer.zero_grad()
+                    loss.backward()
+                    nn.utils.clip_grad_value_(net.parameters(), 0.1)
+                    optimizer.step()
 
-                pbar.update(imgs.shape[0])
+                    pbar.update(imgs.shape[0])
 
-        train_log.info('Train epoch {} loss: {}'.format(epoch + 1, epoch_loss / n_train))
+            train_log.info('Train epoch {} loss: {}'.format(epoch + 1, epoch_loss / n_train))
 
-        for tag, value in net.named_parameters():
-            tag = tag.replace('.', '/')
-            writer.add_histogram('weights/' + tag, value.data.cpu().numpy(), global_step)
-            if value.grad is not None:
-                writer.add_histogram('grads/' + tag, value.grad.data.cpu().numpy(), global_step)
-        val_score, val_loss = eval_net(net, val_loader, n_val, device)
-        scheduler.step(val_score)
-        writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], global_step)
+            for tag, value in net.named_parameters():
+                tag = tag.replace('.', '/')
+                writer.add_histogram('weights/' + tag, value.data.cpu().numpy(), global_step)
+                if value.grad is not None:
+                    writer.add_histogram('grads/' + tag, value.grad.data.cpu().numpy(), global_step)
+            val_score, val_loss = eval_net(net, val_loader, n_val, device)
+            scheduler.step(val_score)
+            writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], global_step)
 
-        if module.n_classes > 1:
-            train_log.info('Validation cross entropy: {}'.format(val_loss))
-            writer.add_scalar('Loss/val', val_loss, global_step)
-            train_log.info('Validation mean Average Precision(mAP): {}'.format(val_score))
-            writer.add_scalar('mAP/val', val_score, global_step)
-        else:
-            train_log.info('Validation binary cross entropy: {}'.format(val_loss))
-            writer.add_scalar('Loss/val', val_loss, global_step)
-            train_log.info('Validation Area Under roc Curve(AUC): {}'.format(val_score))
-            writer.add_scalar('AUC/val', val_score, global_step)
-        
-        if not flag_3d:
-            writer.add_images('images/origin', imgs, global_step)
-        if module.n_classes == 1:
-            writer.add_images('categories/true', true_categories[:, None, None, None].repeat(1,1,100,100).float(), global_step)
-            writer.add_images('categories/pred', (torch.sigmoid(categories_pred)>0.5)[:, :, None, None].repeat(1,1,100,100), global_step)
-        else:
-            color_list = [torch.ByteTensor([0,0,0]), torch.ByteTensor([255,0,0]), torch.ByteTensor([0,255,0]), torch.ByteTensor([0,0,255])]
-            true_categories_img = torch.zeros(true_categories.shape[0], 100, 100, 3, dtype = torch.uint8)
-            categories_pred_img = torch.zeros(categories_pred.shape[0], 100, 100, 3, dtype = torch.uint8)
-            categories_pred_idx = categories_pred.argmax(dim=1)
-            for category in range(1, module.n_classes):
-                true_categories_img[true_categories==category] = color_list[category]
-                categories_pred_img[categories_pred_idx==category] = color_list[category]
-            writer.add_images('categories/true', true_categories_img, global_step, dataformats='NHWC')
-            writer.add_images('categories/pred', categories_pred_img, global_step, dataformats='NHWC')
+            if module.n_classes > 1:
+                train_log.info('Validation cross entropy: {}'.format(val_loss))
+                writer.add_scalar('Loss/val', val_loss, global_step)
+                train_log.info('Validation mean Average Precision(mAP): {}'.format(val_score))
+                writer.add_scalar('mAP/val', val_score, global_step)
+            else:
+                train_log.info('Validation binary cross entropy: {}'.format(val_loss))
+                writer.add_scalar('Loss/val', val_loss, global_step)
+                train_log.info('Validation Area Under roc Curve(AUC): {}'.format(val_score))
+                writer.add_scalar('AUC/val', val_score, global_step)
+            
+            if not flag_3d:
+                writer.add_images('images/origin', imgs, global_step)
+            if module.n_classes == 1:
+                writer.add_images('categories/true', true_categories[:, None, None, None].repeat(1,1,100,100).float(), global_step)
+                writer.add_images('categories/pred', (torch.sigmoid(categories_pred)>0.5)[:, :, None, None].repeat(1,1,100,100), global_step)
+            else:
+                color_list = [torch.ByteTensor([0,0,0]), torch.ByteTensor([255,0,0]), torch.ByteTensor([0,255,0]), torch.ByteTensor([0,0,255])]
+                true_categories_img = torch.zeros(true_categories.shape[0], 100, 100, 3, dtype = torch.uint8)
+                categories_pred_img = torch.zeros(categories_pred.shape[0], 100, 100, 3, dtype = torch.uint8)
+                categories_pred_idx = categories_pred.argmax(dim=1)
+                for category in range(1, module.n_classes):
+                    true_categories_img[true_categories==category] = color_list[category]
+                    categories_pred_img[categories_pred_idx==category] = color_list[category]
+                writer.add_images('categories/true', true_categories_img, global_step, dataformats='NHWC')
+                writer.add_images('categories/pred', categories_pred_img, global_step, dataformats='NHWC')
 
-        if val_score > best_val_score: #val_score < best_val_score if module.n_classes > 1 else val_score > best_val_score:
-            best_val_score = val_score
-            if not os.path.exists(dir_checkpoint):
-                os.makedirs(dir_checkpoint)
-                train_log.info('Created checkpoint directory')
-            torch.save(module.state_dict(), dir_checkpoint + 'Net_best.pth')
-            train_log.info('Best model saved !')
-            useless_epoch_count = 0
-        else:
-            useless_epoch_count += 1
-        
-        if save_cp:
-            if not os.path.exists(dir_checkpoint):
-                os.makedirs(dir_checkpoint)
-                train_log.info('Created checkpoint directory')
-            torch.save(module.state_dict(), dir_checkpoint + f'Net_epoch{epoch + 1}.pth')
-            train_log.info(f'Checkpoint {epoch + 1} saved !')
+            if val_score > best_val_score: #val_score < best_val_score if module.n_classes > 1 else val_score > best_val_score:
+                best_val_score = val_score
+                if not os.path.exists(dir_checkpoint):
+                    os.makedirs(dir_checkpoint)
+                    train_log.info('Created checkpoint directory')
+                torch.save(module.state_dict(), dir_checkpoint + 'Net_best.pth')
+                train_log.info('Best model saved !')
+                useless_epoch_count = 0
+            else:
+                useless_epoch_count += 1
+            
+            if save_cp:
+                if not os.path.exists(dir_checkpoint):
+                    os.makedirs(dir_checkpoint)
+                    train_log.info('Created checkpoint directory')
+                torch.save(module.state_dict(), dir_checkpoint + f'Net_epoch{epoch + 1}.pth')
+                train_log.info(f'Checkpoint {epoch + 1} saved !')
 
-        if args.early_stopping and useless_epoch_count == args.early_stopping:
-            train_log.info(f'There are {useless_epoch_count} useless epochs! Early Stop Training!')
+            if args.early_stopping and useless_epoch_count == args.early_stopping:
+                train_log.info(f'There are {useless_epoch_count} useless epochs! Early Stop Training!')
+                break
+        except KeyboardInterrupt:
+            train_log.info('Receive KeyboardInterrupt, stop training...')
             break
 
     torch.save(optimizer.state_dict(), dir_checkpoint + f'Optimizer.pth')
@@ -484,81 +488,85 @@ def train_supcon(net,
     best_val_score = float('inf')
     useless_epoch_count = 0
     for epoch in range(epochs):
-        net.train()
-        epoch_loss = 0
-        with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
-            for imgs, true_categories in train_loader:
-                global_step += 1
+        try:
+            net.train()
+            epoch_loss = 0
+            with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
+                for imgs, true_categories in train_loader:
+                    global_step += 1
 
-                imgs = torch.cat([imgs[0], imgs[1]], dim=0)
-                assert imgs.shape[1] == module.n_channels, \
-                    f'Network has been defined with {module.n_channels} input channels, ' \
-                    f'but loaded images have {imgs.shape[1]} channels. Please check that ' \
-                    'the images are loaded correctly.'
-                bsz = true_categories.shape[0]
+                    imgs = torch.cat([imgs[0], imgs[1]], dim=0)
+                    assert imgs.shape[1] == module.n_channels, \
+                        f'Network has been defined with {module.n_channels} input channels, ' \
+                        f'but loaded images have {imgs.shape[1]} channels. Please check that ' \
+                        'the images are loaded correctly.'
+                    bsz = true_categories.shape[0]
 
-                imgs = imgs.to(device=device, dtype=torch.float32)
-                true_categories = true_categories.to(device=device, dtype=torch.long)
+                    imgs = imgs.to(device=device, dtype=torch.float32)
+                    true_categories = true_categories.to(device=device, dtype=torch.long)
 
-                features, _ = net(imgs)
-                f1, f2 = torch.split(features, [bsz, bsz], dim=0)
-                features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
-                if args.method.lower() == 'supcon':
-                    loss = criterion(features, true_categories)
-                elif args.method.lower() == 'simclr':
-                    loss = criterion(features)
-                else:
-                    raise ValueError(f'contrastive method not supported: {args.method}')
+                    features, _ = net(imgs)
+                    f1, f2 = torch.split(features, [bsz, bsz], dim=0)
+                    features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
+                    if args.method.lower() == 'supcon':
+                        loss = criterion(features, true_categories)
+                    elif args.method.lower() == 'simclr':
+                        loss = criterion(features)
+                    else:
+                        raise ValueError(f'contrastive method not supported: {args.method}')
 
-                epoch_loss += loss.item() * bsz
-                writer.add_scalar('Loss/train', loss.item(), global_step)
+                    epoch_loss += loss.item() * bsz
+                    writer.add_scalar('Loss/train', loss.item(), global_step)
 
-                pbar.set_postfix(**{'loss (batch)': loss.item()})
+                    pbar.set_postfix(**{'loss (batch)': loss.item()})
 
-                optimizer.zero_grad()
-                loss.backward()
-                #nn.utils.clip_grad_value_(net.parameters(), 0.1)
-                optimizer.step()
+                    optimizer.zero_grad()
+                    loss.backward()
+                    #nn.utils.clip_grad_value_(net.parameters(), 0.1)
+                    optimizer.step()
 
-                pbar.update(bsz)
+                    pbar.update(bsz)
 
-        epoch_loss /= n_train
-        train_log.info('Train epoch {} loss: {}'.format(epoch + 1, epoch_loss))
+            epoch_loss /= n_train
+            train_log.info('Train epoch {} loss: {}'.format(epoch + 1, epoch_loss))
 
-        for tag, value in net.named_parameters():
-            tag = tag.replace('.', '/')
-            writer.add_histogram('weights/' + tag, value.data.cpu().numpy(), global_step)
-            writer.add_histogram('grads/' + tag, value.grad.data.cpu().numpy(), global_step)
-        val_score = eval_supcon(net, val_loader, n_val, device, args.n_classes)
-        scheduler.step(val_score)
-        writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], global_step)
+            for tag, value in net.named_parameters():
+                tag = tag.replace('.', '/')
+                writer.add_histogram('weights/' + tag, value.data.cpu().numpy(), global_step)
+                writer.add_histogram('grads/' + tag, value.grad.data.cpu().numpy(), global_step)
+            val_score = eval_supcon(net, val_loader, n_val, device, args.n_classes)
+            scheduler.step(val_score)
+            writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], global_step)
 
-        train_log.info('Validation inner_dis/outer_dis ratio: {}'.format(val_score))
-        writer.add_scalar('dis_ratio/val', val_score, global_step)
-        
-        if not flag_3d:
-            writer.add_images('images/origin', imgs, global_step)
+            train_log.info('Validation inner_dis/outer_dis ratio: {}'.format(val_score))
+            writer.add_scalar('dis_ratio/val', val_score, global_step)
+            
+            if not flag_3d:
+                writer.add_images('images/origin', imgs, global_step)
 
-        if val_score < best_val_score: #val_score < best_val_score if module.n_classes > 1 else val_score > best_val_score:
-            best_val_score = val_score
-            if not os.path.exists(dir_checkpoint):
-                os.makedirs(dir_checkpoint)
-                train_log.info('Created checkpoint directory')
-            torch.save(module.state_dict(), dir_checkpoint + 'Net_best.pth')
-            train_log.info('Best model saved !')
-            useless_epoch_count = 0
-        else:
-            useless_epoch_count += 1
-        
-        if save_cp:
-            if not os.path.exists(dir_checkpoint):
-                os.makedirs(dir_checkpoint)
-                train_log.info('Created checkpoint directory')
-            torch.save(module.state_dict(), dir_checkpoint + f'Net_epoch{epoch + 1}.pth')
-            train_log.info(f'Checkpoint {epoch + 1} saved !')
+            if val_score < best_val_score: #val_score < best_val_score if module.n_classes > 1 else val_score > best_val_score:
+                best_val_score = val_score
+                if not os.path.exists(dir_checkpoint):
+                    os.makedirs(dir_checkpoint)
+                    train_log.info('Created checkpoint directory')
+                torch.save(module.state_dict(), dir_checkpoint + 'Net_best.pth')
+                train_log.info('Best model saved !')
+                useless_epoch_count = 0
+            else:
+                useless_epoch_count += 1
+            
+            if save_cp:
+                if not os.path.exists(dir_checkpoint):
+                    os.makedirs(dir_checkpoint)
+                    train_log.info('Created checkpoint directory')
+                torch.save(module.state_dict(), dir_checkpoint + f'Net_epoch{epoch + 1}.pth')
+                train_log.info(f'Checkpoint {epoch + 1} saved !')
 
-        if args.early_stopping and useless_epoch_count == args.early_stopping:
-            train_log.info(f'There are {useless_epoch_count} useless epochs! Early Stop Training!')
+            if args.early_stopping and useless_epoch_count == args.early_stopping:
+                train_log.info(f'There are {useless_epoch_count} useless epochs! Early Stop Training!')
+                break
+        except KeyboardInterrupt:
+            train_log.info('Receive KeyboardInterrupt, stop training...')
             break
 
     torch.save(optimizer.state_dict(), dir_checkpoint + f'Optimizer.pth')

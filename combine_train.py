@@ -76,20 +76,35 @@ def combine_train(device,
     dir_checkpoint = os.path.join(dir_checkpoint, train_log.train_time_str + '/')
     writer = SummaryWriter(log_dir=f'details/runs/{train_log.train_time_str}_Combine{model_depth}_LR_{lr}_BS_{batch_size}_ImgSize_{img_size}')
 
-    train_transform = T.Compose([
-        T.Resize(img_size), # 缩放图片(Image)，保持长宽比不变，最短边为img_size像素
-        T.CenterCrop(img_size), # 从图片中间切出img_size*img_size的图片
-        T.RandomChoice([T.RandomHorizontalFlip(), T.RandomVerticalFlip()]),
-        T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.7),
-        T.RandomApply([T.RandomRotation(45, T.InterpolationMode.BILINEAR)], p=0.4),
-        T.ToTensor(), # 将图片(Image)转成Tensor，归一化至[0, 1]
-    ])
-    val_transform = T.Compose([
-        T.Resize(img_size), # 缩放图片(Image)，保持长宽比不变，最短边为img_size像素
-        T.CenterCrop(img_size), # 从图片中间切出img_size*img_size的图片
-        T.ToTensor(), # 将图片(Image)转成Tensor，归一化至[0, 1]
-        #T.Normalize(mean=[.5], std=[.5]) # 标准化至[-1, 1]，规定均值和标准差
-    ])
+    if flag_3d:
+        train_transform = T.Compose([
+            MT.Resize3D(img_size),
+            MT.CenterCrop3D(img_size), 
+            T.RandomChoice([MT.RandomHorizontalFlip3D(), MT.RandomVerticalFlip3D()]),
+            T.RandomApply([MT.ColorJitter3D(0.4, 0.4, 0.4, 0.1)], p=0.7),
+            T.RandomApply([MT.RandomRotation3D(45, T.InterpolationMode.BILINEAR)], p=0.4),
+            MT.ToTensor3D(), 
+        ])
+        val_transform = T.Compose([
+            MT.Resize3D(img_size),
+            MT.CenterCrop3D(img_size),
+            MT.ToTensor3D(),
+        ])
+    else:
+        train_transform = T.Compose([
+            T.Resize(img_size),
+            T.CenterCrop(img_size),
+            T.RandomChoice([T.RandomHorizontalFlip(), T.RandomVerticalFlip()]),
+            T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.7),
+            T.RandomApply([T.RandomRotation(45, T.InterpolationMode.BILINEAR)], p=0.4),
+            T.ToTensor(),
+        ])
+        val_transform = T.Compose([
+            T.Resize(img_size), # 缩放图片(Image)，保持长宽比不变，最短边为img_size像素
+            T.CenterCrop(img_size), # 从图片中间切出img_size*img_size的图片
+            T.ToTensor(), # 将图片(Image)转成Tensor，归一化至[0, 1]
+            #T.Normalize(mean=[.5], std=[.5]) # 标准化至[-1, 1]，规定均值和标准差
+        ])
 
     if flag_3d:
         train = AortaDataset3DCenter(os.path.join(dir_img, 'train'), transform=train_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d, supcon=True)
@@ -141,105 +156,109 @@ def combine_train(device,
     best_val_score = -1
     useless_epoch_count = 0
     for epoch in range(epochs):
-        supcon.train()
-        fc.train()
-        epoch_loss = 0
-        with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
-            for imgs, true_categories in train_loader:
-                global_step += 1
+        try:
+            supcon.train()
+            fc.train()
+            epoch_loss = 0
+            with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
+                for imgs, true_categories in train_loader:
+                    global_step += 1
 
-                imgs = torch.cat([imgs[0], imgs[1]], dim=0)
-                assert imgs.shape[1] == n_channels, \
-                    f'Network has been defined with {n_channels} input channels, ' \
-                    f'but loaded images have {imgs.shape[1]} channels. Please check that ' \
-                    'the images are loaded correctly.'
-                bsz = true_categories.shape[0]
+                    imgs = torch.cat([imgs[0], imgs[1]], dim=0)
+                    assert imgs.shape[1] == n_channels, \
+                        f'Network has been defined with {n_channels} input channels, ' \
+                        f'but loaded images have {imgs.shape[1]} channels. Please check that ' \
+                        'the images are loaded correctly.'
+                    bsz = true_categories.shape[0]
 
-                imgs = imgs.to(device=device, dtype=torch.float32)
-                category_type = torch.float32 if n_classes == 1 else torch.long
-                true_categories = true_categories.to(device=device, dtype=category_type)
+                    imgs = imgs.to(device=device, dtype=torch.float32)
+                    category_type = torch.float32 if n_classes == 1 else torch.long
+                    true_categories = true_categories.to(device=device, dtype=category_type)
 
-                features, representations = supcon(imgs)
-                f1, f2 = torch.split(features, [bsz, bsz], dim=0)
-                features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
-                if args.method.lower() == 'supcon':
-                    loss_con = supcon_criterion(features, true_categories)
-                elif args.method.lower() == 'simclr':
-                    loss_con = supcon_criterion(features)
-                else:
-                    raise ValueError(f'contrastive method not supported: {args.method}')
-                pred_categories = fc(representations)
-                if n_classes == 1:
-                    true_categories = true_categories.unsqueeze(1)
-                loss_ce = ce_criterion(pred_categories, torch.cat([true_categories, true_categories], dim=0))
-                loss = args.alpha*loss_ce + (1-args.alpha)*loss_con
+                    features, representations = supcon(imgs)
+                    f1, f2 = torch.split(features, [bsz, bsz], dim=0)
+                    features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
+                    if args.method.lower() == 'supcon':
+                        loss_con = supcon_criterion(features, true_categories)
+                    elif args.method.lower() == 'simclr':
+                        loss_con = supcon_criterion(features)
+                    else:
+                        raise ValueError(f'contrastive method not supported: {args.method}')
+                    pred_categories = fc(representations)
+                    if n_classes == 1:
+                        true_categories = true_categories.unsqueeze(1)
+                    loss_ce = ce_criterion(pred_categories, torch.cat([true_categories, true_categories], dim=0))
+                    loss = args.alpha*loss_ce + (1-args.alpha)*loss_con
 
-                epoch_loss += loss.item() * bsz
-                writer.add_scalar('Loss/train', loss.item(), global_step)
+                    epoch_loss += loss.item() * bsz
+                    writer.add_scalar('Loss/train', loss.item(), global_step)
 
-                pbar.set_postfix(**{'loss (batch)': loss.item()})
+                    pbar.set_postfix(**{'loss (batch)': loss.item()})
 
-                optimizer.zero_grad()
-                loss.backward()
-                nn.utils.clip_grad_value_(supcon_module.parameters(), 0.1)
-                nn.utils.clip_grad_value_(fc_module.parameters(), 0.1)
-                optimizer.step()
+                    optimizer.zero_grad()
+                    loss.backward()
+                    nn.utils.clip_grad_value_(supcon_module.parameters(), 0.1)
+                    nn.utils.clip_grad_value_(fc_module.parameters(), 0.1)
+                    optimizer.step()
 
-                pbar.update(bsz)
+                    pbar.update(bsz)
 
-        epoch_loss /= n_train
-        train_log.info('Train epoch {} loss: {}'.format(epoch + 1, epoch_loss))
+            epoch_loss /= n_train
+            train_log.info('Train epoch {} loss: {}'.format(epoch + 1, epoch_loss))
 
-        for tag, value in supcon_module.named_parameters():
-            tag = tag.replace('.', '/')
-            writer.add_histogram('weights/supcon/' + tag, value.data.cpu().numpy(), global_step)
-            writer.add_histogram('grads/suocon/' + tag, value.grad.data.cpu().numpy(), global_step)
-        for tag, value in fc_module.named_parameters():
-            tag = tag.replace('.', '/')
-            writer.add_histogram('weights/fc/' + tag, value.data.cpu().numpy(), global_step)
-            writer.add_histogram('grads/fc/' + tag, value.grad.data.cpu().numpy(), global_step)
-        val_score, val_loss, val_ratio = eval_combine(supcon, fc, val_loader, n_val, device, n_classes)
-        scheduler.step(val_score)
-        writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], global_step)
+            for tag, value in supcon_module.named_parameters():
+                tag = tag.replace('.', '/')
+                writer.add_histogram('weights/supcon/' + tag, value.data.cpu().numpy(), global_step)
+                writer.add_histogram('grads/suocon/' + tag, value.grad.data.cpu().numpy(), global_step)
+            for tag, value in fc_module.named_parameters():
+                tag = tag.replace('.', '/')
+                writer.add_histogram('weights/fc/' + tag, value.data.cpu().numpy(), global_step)
+                writer.add_histogram('grads/fc/' + tag, value.grad.data.cpu().numpy(), global_step)
+            val_score, val_loss, val_ratio = eval_combine(supcon, fc, val_loader, n_val, device, n_classes)
+            scheduler.step(val_score)
+            writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], global_step)
 
-        if n_classes > 1:
-            train_log.info('Validation cross entropy: {}'.format(val_loss))
-            writer.add_scalar('Loss/val', val_loss, global_step)
-            train_log.info('Validation mean Average Precision(mAP): {}'.format(val_score))
-            writer.add_scalar('mAP/val', val_score, global_step)
-        else:
-            train_log.info('Validation binary cross entropy: {}'.format(val_loss))
-            writer.add_scalar('Loss/val', val_loss, global_step)
-            train_log.info('Validation Area Under roc Curve(AUC): {}'.format(val_score))
-            writer.add_scalar('AUC/val', val_score, global_step)
-        train_log.info('Validation inner_dis/outer_dis ratio: {}'.format(val_ratio))
-        writer.add_scalar('dis_ratio/val', val_ratio, global_step)
-        
-        if not flag_3d:
-            writer.add_images('images/origin', imgs, global_step)
+            if n_classes > 1:
+                train_log.info('Validation cross entropy: {}'.format(val_loss))
+                writer.add_scalar('Loss/val', val_loss, global_step)
+                train_log.info('Validation mean Average Precision(mAP): {}'.format(val_score))
+                writer.add_scalar('mAP/val', val_score, global_step)
+            else:
+                train_log.info('Validation binary cross entropy: {}'.format(val_loss))
+                writer.add_scalar('Loss/val', val_loss, global_step)
+                train_log.info('Validation Area Under roc Curve(AUC): {}'.format(val_score))
+                writer.add_scalar('AUC/val', val_score, global_step)
+            train_log.info('Validation inner_dis/outer_dis ratio: {}'.format(val_ratio))
+            writer.add_scalar('dis_ratio/val', val_ratio, global_step)
+            
+            if not flag_3d:
+                writer.add_images('images/origin', imgs, global_step)
 
-        if val_score > best_val_score: #val_score < best_val_score if module.n_classes > 1 else val_score > best_val_score:
-            best_val_score = val_score
-            if not os.path.exists(dir_checkpoint):
-                os.makedirs(dir_checkpoint)
-                train_log.info('Created checkpoint directory')
-            torch.save(supcon_module.state_dict(), dir_checkpoint + 'supcon_best.pth')
-            torch.save(fc_module.state_dict(), dir_checkpoint + 'fc_best.pth')
-            train_log.info('Best model saved !')
-            useless_epoch_count = 0
-        else:
-            useless_epoch_count += 1
-        
-        if save_cp:
-            if not os.path.exists(dir_checkpoint):
-                os.makedirs(dir_checkpoint)
-                train_log.info('Created checkpoint directory')
-            torch.save(supcon_module.state_dict(), dir_checkpoint + f'supcon_epoch{epoch + 1}.pth')
-            torch.save(fc_module.state_dict(), dir_checkpoint + f'fc_epoch{epoch + 1}.pth')
-            train_log.info(f'Checkpoint {epoch + 1} saved !')
+            if val_score > best_val_score: #val_score < best_val_score if module.n_classes > 1 else val_score > best_val_score:
+                best_val_score = val_score
+                if not os.path.exists(dir_checkpoint):
+                    os.makedirs(dir_checkpoint)
+                    train_log.info('Created checkpoint directory')
+                torch.save(supcon_module.state_dict(), dir_checkpoint + 'supcon_best.pth')
+                torch.save(fc_module.state_dict(), dir_checkpoint + 'fc_best.pth')
+                train_log.info('Best model saved !')
+                useless_epoch_count = 0
+            else:
+                useless_epoch_count += 1
+            
+            if save_cp:
+                if not os.path.exists(dir_checkpoint):
+                    os.makedirs(dir_checkpoint)
+                    train_log.info('Created checkpoint directory')
+                torch.save(supcon_module.state_dict(), dir_checkpoint + f'supcon_epoch{epoch + 1}.pth')
+                torch.save(fc_module.state_dict(), dir_checkpoint + f'fc_epoch{epoch + 1}.pth')
+                train_log.info(f'Checkpoint {epoch + 1} saved !')
 
-        if args.early_stopping and useless_epoch_count == args.early_stopping:
-            train_log.info(f'There are {useless_epoch_count} useless epochs! Early Stop Training!')
+            if args.early_stopping and useless_epoch_count == args.early_stopping:
+                train_log.info(f'There are {useless_epoch_count} useless epochs! Early Stop Training!')
+                break
+        except KeyboardInterrupt:
+            train_log.info('Receive KeyboardInterrupt, stop training...')
             break
 
     torch.save(optimizer.state_dict(), dir_checkpoint + f'Optimizer.pth')
