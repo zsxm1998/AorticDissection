@@ -23,7 +23,7 @@ from PIL import Image
 
 from utils.eval import eval_net, eval_supcon
 from utils.print_log import train_log
-from models.resnet3d import generate_model
+from models.resnet3d import SupConResNet3D, resnet3d
 from utils.datasets import AortaDataset3D, LabelSampler, AortaDataset3DCenter
 from models.SupCon import *
 from models.losses import SupConLoss
@@ -51,7 +51,7 @@ def create_net(device,
     args = SimpleNamespace(**kwargs)
 
     if flag_3d:
-        net = generate_model(model_depth, n_channels=n_channels, n_classes=n_classes, conv1_t_size=3)
+        net = resnet3d(model_depth, n_channels=n_channels, n_classes=n_classes, conv1_t_size=3)
     else:
         net = resnet(model_depth, n_channels=n_channels, n_classes=n_classes, entire=args.entire)
 
@@ -359,7 +359,10 @@ def create_supcon(device,
 
     args = SimpleNamespace(**kwargs)
 
-    net = SupConResNet(n_channels=n_channels, name=f'resnet{model_depth}', head='mlp', feat_dim=128, norm_encoder_output=norm_encoder_output)
+    if flag_3d:
+        net = SupConResNet3D(n_channels=n_channels, name=f'resnet{model_depth}', head='mlp', feat_dim=128, norm_encoder_output=norm_encoder_output, conv1_t_size=3)
+    else:
+        net = SupConResNet(n_channels=n_channels, name=f'resnet{model_depth}', head='mlp', feat_dim=128, norm_encoder_output=norm_encoder_output)
 
     train_log.info('**********************************************************************\n'
                  f'Network: {net.__class__.__name__}+{net.name}\n'
@@ -404,24 +407,39 @@ def train_supcon(net,
     dir_checkpoint = os.path.join(dir_checkpoint, train_log.train_time_str + '/')
     writer = SummaryWriter(log_dir=f'details/runs/{train_log.train_time_str}_{module.__class__.__name__}+{module.name}_LR_{lr}_BS_{batch_size}_ImgSize_{img_size}')
 
-    train_transform = T.Compose([
-        T.Resize(img_size), # 缩放图片(Image)，保持长宽比不变，最短边为img_size像素
-        T.CenterCrop(img_size), # 从图片中间切出img_size*img_size的图片
-        T.RandomChoice([T.RandomHorizontalFlip(), T.RandomVerticalFlip()]),
-        T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.7),
-        T.RandomApply([T.RandomRotation(45, T.InterpolationMode.BILINEAR)], p=0.4),
-        T.ToTensor(), # 将图片(Image)转成Tensor，归一化至[0, 1]
-    ])
-    val_transform = T.Compose([
-        T.Resize(img_size), # 缩放图片(Image)，保持长宽比不变，最短边为img_size像素
-        T.CenterCrop(img_size), # 从图片中间切出img_size*img_size的图片
-        T.ToTensor(), # 将图片(Image)转成Tensor，归一化至[0, 1]
-        #T.Normalize(mean=[.5], std=[.5]) # 标准化至[-1, 1]，规定均值和标准差
-    ])
+    if flag_3d:
+        train_transform = T.Compose([
+            MT.Resize3D(img_size),
+            MT.CenterCrop3D(img_size), 
+            T.RandomChoice([MT.RandomHorizontalFlip3D(), MT.RandomVerticalFlip3D()]),
+            T.RandomApply([MT.ColorJitter3D(0.4, 0.4, 0.4, 0.1)], p=0.7),
+            T.RandomApply([MT.RandomRotation3D(45, T.InterpolationMode.BILINEAR)], p=0.4),
+            MT.ToTensor3D(), 
+        ])
+        val_transform = T.Compose([
+            MT.Resize3D(img_size),
+            MT.CenterCrop3D(img_size),
+            MT.ToTensor3D(),
+        ])
+    else:
+        train_transform = T.Compose([
+            T.Resize(img_size),
+            T.CenterCrop(img_size),
+            T.RandomChoice([T.RandomHorizontalFlip(), T.RandomVerticalFlip()]),
+            T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.7),
+            T.RandomApply([T.RandomRotation(45, T.InterpolationMode.BILINEAR)], p=0.4),
+            T.ToTensor(),
+        ])
+        val_transform = T.Compose([
+            T.Resize(img_size), # 缩放图片(Image)，保持长宽比不变，最短边为img_size像素
+            T.CenterCrop(img_size), # 从图片中间切出img_size*img_size的图片
+            T.ToTensor(), # 将图片(Image)转成Tensor，归一化至[0, 1]
+            #T.Normalize(mean=[.5], std=[.5]) # 标准化至[-1, 1]，规定均值和标准差
+        ])
 
     if flag_3d:
-        train = AortaDataset3D(os.path.join(dir_img, 'train'), transform=TwoCropTransform(train_transform), depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
-        val = AortaDataset3D(os.path.join(dir_img, 'val'), transform=val_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
+        train = AortaDataset3DCenter(os.path.join(dir_img, 'train'), transform=train_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d, supcon=True)
+        val = AortaDataset3DCenter(os.path.join(dir_img, 'val'), transform=val_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
     else:
         train = ImageFolder(os.path.join(dir_img, 'train'), transform=TwoCropTransform(train_transform), loader=lambda path: Image.open(path))
         val = ImageFolder(os.path.join(dir_img, 'val'), transform=val_transform, loader=lambda path: Image.open(path))

@@ -23,7 +23,7 @@ from PIL import Image
 
 from utils.eval import eval_combine, eval_net, eval_supcon
 from utils.print_log import train_log
-from models.resnet3d import generate_model
+from models.resnet3d import SupConResNet3D, resnet3d
 from utils.datasets import AortaDataset3D, LabelSampler, AortaDataset3DCenter
 from models.SupCon import *
 from models.losses import SupConLoss
@@ -57,7 +57,10 @@ def combine_train(device,
 
     args = SimpleNamespace(**kwargs)
 
-    supcon = SupConResNet(n_channels=n_channels, name=f'resnet{model_depth}', head='mlp', feat_dim=128, norm_encoder_output=args.norm_encoder_output)
+    if flag_3d:
+        supcon = SupConResNet3D(n_channels=n_channels, name=f'resnet{model_depth}', head='mlp', feat_dim=128, norm_encoder_output=args.norm_encoder_output, conv1_t_size=3)
+    else:
+        supcon = SupConResNet(n_channels=n_channels, name=f'resnet{model_depth}', head='mlp', feat_dim=128, norm_encoder_output=args.norm_encoder_output)
     fc = nn.Linear(supcon.dim_in, n_classes)
     supcon.to(device)
     fc.to(device)
@@ -89,8 +92,8 @@ def combine_train(device,
     ])
 
     if flag_3d:
-        train = AortaDataset3D(os.path.join(dir_img, 'train'), transform=TwoCropTransform(train_transform), depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
-        val = AortaDataset3D(os.path.join(dir_img, 'val'), transform=val_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
+        train = AortaDataset3DCenter(os.path.join(dir_img, 'train'), transform=train_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d, supcon=True)
+        val = AortaDataset3DCenter(os.path.join(dir_img, 'val'), transform=val_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
     else:
         train = ImageFolder(os.path.join(dir_img, 'train'), transform=TwoCropTransform(train_transform), loader=lambda path: Image.open(path))
         val = ImageFolder(os.path.join(dir_img, 'val'), transform=val_transform, loader=lambda path: Image.open(path))

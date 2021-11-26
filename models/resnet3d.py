@@ -7,6 +7,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+__all__ = ['resnet3d', 'ResNet3D', 'resnet3d_encoder', 'SupConResNet3D']
+
+
 def get_inplanes():
     return [64, 128, 256, 512]
 
@@ -100,7 +103,7 @@ class Bottleneck(nn.Module):
         return out
 
 
-class ResNetEncoder(nn.Module):
+class ResNetEncoder3D(nn.Module):
 
     def __init__(self,
                  block,
@@ -180,9 +183,6 @@ class ResNetEncoder(nn.Module):
             else:
                 downsample = nn.Sequential(
                     conv1x1x1(self.in_planes, planes * block.expansion, stride),
-                    nn.BatchNorm3d(planes * block.expansion)
-                    ) if stride == 1 else nn.Sequential(nn.AvgPool3d(stride, stride, ceil_mode=True),
-                    conv1x1x1(self.in_planes, planes * block.expansion, 1),
                     nn.BatchNorm3d(planes * block.expansion))
 
         layers = []
@@ -214,7 +214,7 @@ class ResNetEncoder(nn.Module):
         return x
 
 
-class ResNet(nn.Module):
+class ResNet3D(nn.Module):
 
     def __init__(self,
                  block,
@@ -236,7 +236,7 @@ class ResNet(nn.Module):
         self.net_name = net_name
         self.entire = entire
 
-        self.encoder = ResNetEncoder(block, layers, block_inplanes, n_channels, conv1_t_size, conv1_t_stride, no_max_pool, shortcut_type, widen_factor)
+        self.encoder = ResNetEncoder3D(block, layers, block_inplanes, n_channels, conv1_t_size, conv1_t_stride, no_max_pool, shortcut_type, widen_factor)
         self.fc = nn.Linear(int(block_inplanes[3]*widen_factor), n_classes)
 
     def forward(self, x):
@@ -250,22 +250,92 @@ class ResNet(nn.Module):
         return self.fc(x)
 
 
-def generate_model(model_depth, **kwargs):
+def resnet3d(model_depth, **kwargs):
     assert model_depth in [10, 18, 34, 50, 101, 152, 200]
 
     if model_depth == 10:
-        model = ResNet(BasicBlock, [1, 1, 1, 1], get_inplanes(), 'ResNet3D_10', **kwargs)
+        model = ResNet3D(BasicBlock, [1, 1, 1, 1], get_inplanes(), 'ResNet3D_10', **kwargs)
     elif model_depth == 18:
-        model = ResNet(BasicBlock, [2, 2, 2, 2], get_inplanes(), 'ResNet3D_18', **kwargs)
+        model = ResNet3D(BasicBlock, [2, 2, 2, 2], get_inplanes(), 'ResNet3D_18', **kwargs)
     elif model_depth == 34:
-        model = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), 'ResNet3D_34', **kwargs)
+        model = ResNet3D(BasicBlock, [3, 4, 6, 3], get_inplanes(), 'ResNet3D_34', **kwargs)
     elif model_depth == 50:
-        model = ResNet(Bottleneck, [3, 4, 6, 3], get_inplanes(), 'ResNet3D_50', **kwargs)
+        model = ResNet3D(Bottleneck, [3, 4, 6, 3], get_inplanes(), 'ResNet3D_50', **kwargs)
     elif model_depth == 101:
-        model = ResNet(Bottleneck, [3, 4, 23, 3], get_inplanes(), 'ResNet3D_101', **kwargs)
+        model = ResNet3D(Bottleneck, [3, 4, 23, 3], get_inplanes(), 'ResNet3D_101', **kwargs)
     elif model_depth == 152:
-        model = ResNet(Bottleneck, [3, 8, 36, 3], get_inplanes(), 'ResNet3D_152', **kwargs)
+        model = ResNet3D(Bottleneck, [3, 8, 36, 3], get_inplanes(), 'ResNet3D_152', **kwargs)
     elif model_depth == 200:
-        model = ResNet(Bottleneck, [3, 24, 36, 3], get_inplanes(), 'ResNet3D_200', **kwargs)
+        model = ResNet3D(Bottleneck, [3, 24, 36, 3], get_inplanes(), 'ResNet3D_200', **kwargs)
 
     return model
+
+
+def resnet3d_encoder18(**kwargs):
+    return ResNetEncoder3D(BasicBlock, [2, 2, 2, 2], get_inplanes(), **kwargs)
+
+def resnet3d_encoder34(**kwargs):
+    return ResNetEncoder3D(BasicBlock, [3, 4, 6, 3], get_inplanes(), **kwargs)
+
+def resnet3d_encoder50(**kwargs):
+    return ResNetEncoder3D(Bottleneck, [3, 4, 6, 3], get_inplanes(), **kwargs)
+
+def resnet3d_encoder101(**kwargs):
+    return ResNetEncoder3D(Bottleneck, [3, 4, 23, 3], get_inplanes(), **kwargs)
+
+def resnet3d_encoder152(**kwargs):
+    return ResNetEncoder3D(Bottleneck, [3, 8, 36, 3], get_inplanes(), **kwargs)
+
+def resnet3d_encoder(model_depth, **kwargs):
+    assert model_depth in [18, 34, 50, 101, 152], f'model_depth={model_depth}'
+    if model_depth == 18:
+        model = resnet3d_encoder18(**kwargs)
+    elif model_depth == 34:
+        model = resnet3d_encoder34(**kwargs)
+    elif model_depth == 50:
+        model = resnet3d_encoder50(**kwargs)
+    elif model_depth == 101:
+        model = resnet3d_encoder101(**kwargs)
+    elif model_depth == 152:
+        model = resnet3d_encoder152(**kwargs)
+    return model
+
+
+model_dict = {
+    'resnet18': [resnet3d_encoder18, 512],
+    'resnet34': [resnet3d_encoder34, 512],
+    'resnet50': [resnet3d_encoder50, 2048],
+    'resnet101': [resnet3d_encoder101, 2048],
+    'resnet152': [resnet3d_encoder152, 2048],
+}
+
+
+class SupConResNet3D(nn.Module):
+    """backbone + projection head"""
+    def __init__(self, n_channels=3, name='resnet34', encoder=None, head='mlp', feat_dim=128, norm_encoder_output=False, conv1_t_size=7):
+        super(SupConResNet3D, self).__init__()
+        self.n_channels = n_channels
+        self.name = name
+        self.norm_encoder_output = norm_encoder_output
+        model_fun, self.dim_in = model_dict[name]
+        self.encoder = model_fun(n_channels=n_channels, conv1_t_size=conv1_t_size) if encoder is None else encoder
+        if head == 'linear':
+            self.head = nn.Linear(self.dim_in, feat_dim)
+        elif head == 'mlp':
+            self.head = nn.Sequential(
+                nn.Linear(self.dim_in, self.dim_in),
+                nn.ReLU(inplace=True),
+                nn.Linear(self.dim_in, feat_dim)
+            )
+        else:
+            raise NotImplementedError(
+                'head not supported: {}'.format(head))
+
+    def forward(self, x):
+        r = self.encoder(x)
+        if self.norm_encoder_output:
+            z = F.normalize(r, dim=1)
+            z = F.normalize(self.head(z), dim=1)
+        else:
+            z = F.normalize(self.head(r), dim=1)
+        return z, r

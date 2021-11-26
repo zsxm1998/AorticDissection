@@ -261,13 +261,14 @@ class LabelSampler(Sampler[int]):
 
 
 class AortaDataset3DCenter(Dataset):
-    def __init__(self, img_dir, transform, depth, step=1, residual=False):
+    def __init__(self, img_dir, transform, depth, step=1, residual=False, supcon=False):
         self.img_dir = img_dir
         self.transform = transform
         assert depth % 2 == 1, 'depth should be odd number.'
         self.depth = depth
         self.step = step
         self.residual = residual
+        self.supcon = supcon
         self.labels = sorted([label for label in listdir(img_dir) if isdir(join(img_dir, label))])
         self.datas = []
         for i, label in enumerate(self.labels):
@@ -333,11 +334,28 @@ class AortaDataset3DCenter(Dataset):
         img_list = []
         for img_path in img_path_list:
             img_list.append(Image.open(img_path))
-        img_list = self.transform(img_list)
-        if self.residual:
-            for i in range(1, len(img_list)):
-                res = img_list[i] - img_list[i-1]
-                res = (res + 1) / 2
-                img_list.append(res)
-        imgs = torch.stack(img_list, dim=1)
-        return imgs, label
+        if self.supcon:
+            img_list1 = self.transform(img_list)
+            if self.residual:
+                for i in range(1, len(img_list1)):
+                    res = img_list1[i] - img_list1[i-1]
+                    res = (res + 1) / 2
+                    img_list1.append(res)
+            imgs1 = torch.stack(img_list1, dim=1)
+            img_list2 = self.transform(img_list)
+            if self.residual:
+                for i in range(1, len(img_list2)):
+                    res = img_list2[i] - img_list2[i-1]
+                    res = (res + 1) / 2
+                    img_list2.append(res)
+            imgs2 = torch.stack(img_list2, dim=1)
+            return [imgs1, imgs2], label
+        else:
+            img_list = self.transform(img_list)
+            if self.residual:
+                for i in range(1, len(img_list)):
+                    res = img_list[i] - img_list[i-1]
+                    res = (res + 1) / 2
+                    img_list.append(res)
+            imgs = torch.stack(img_list, dim=1)
+            return imgs, label

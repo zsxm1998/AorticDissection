@@ -18,7 +18,7 @@ from torchvision import transforms as T
 from tqdm import tqdm
 
 from yolov5_detect import run_yolo_detect
-from models.resnet3d import generate_model
+from models.resnet3d import resnet3d
 from utils.datasets import AortaTest, AortaTest3D
 
 PAD_NUM = 4
@@ -225,7 +225,7 @@ def create_net(device,
                flag_3d=True
                ):
     if flag_3d:
-        net = generate_model(34, n_channels=n_channels, n_classes=n_classes, conv1_t_size=3)
+        net = resnet3d(34, n_channels=n_channels, n_classes=n_classes, conv1_t_size=3)
     else:
         net = models.resnet34(pretrained=False)
         net.n_channels, net.n_classes = n_channels, n_classes
