@@ -64,7 +64,7 @@ def combine_train(device,
     fc = nn.Linear(supcon.dim_in, n_classes)
     supcon.to(device)
     fc.to(device)
-    if torch.cuda.device_count() > 1:
+    if torch.cuda.device_count() > 1 and device.type != 'cpu':
         supcon = nn.DataParallel(supcon)
         fc = nn.DataParallel(fc)
         train_log.info(f'torch.cuda.device_count:{torch.cuda.device_count()}, Use nn.DataParallel')
@@ -272,7 +272,7 @@ def combine_train(device,
     train_log.info('Train done! Eval best net and draw PR-curve...')
     supcon_module.load_state_dict(torch.load(os.path.join(dir_checkpoint, 'supcon_best.pth'), map_location=device))
     fc_module.load_state_dict(torch.load(os.path.join(dir_checkpoint, 'fc_best.pth'), map_location=device))
-    if torch.cuda.device_count() > 1:
+    if torch.cuda.device_count() > 1 and device.type != 'cpu':
         supcon.module, fc.module = supcon_module, fc_module
     else:
         supcon, fc = supcon_module, fc_module

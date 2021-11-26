@@ -2,11 +2,14 @@ import random
 import numbers
 import warnings
 
+import cv2
+import numpy as np
 import torch
 import torchvision.transforms as T
 import torchvision.transforms.functional as TF
 from typing import Tuple, List, Optional
 from torch import Tensor
+from PIL import Image, ImageFilter
 
 
 __all__ = ['Resize3D', 'CenterCrop3D', 'RandomHorizontalFlip3D', 'RandomVerticalFlip3D', 'ColorJitter3D', 'RandomRotation3D', 'ToTensor3D']
@@ -266,3 +269,25 @@ class ToTensor3D:
 
     def __repr__(self):
         return self.__class__.__name__ + '()'
+
+
+class GaussianResidual(torch.nn.Module):
+    def __init__(self, ksize, sigma):
+        super().__init__()
+        if isinstance(ksize, int):
+            assert ksize <= 0 or ksize % 2 == 1, f'ksize should be either odd or <= 0, but ksize={ksize}.'
+            self.ksize = (ksize, ksize)
+        elif isinstance(ksize, (tuple, list)):
+            assert len(ksize) == 2, f'length of ksize should be 2 but {len(ksize)}.'
+            self.ksize = tuple(ksize)
+        else:
+            raise TypeError("ksize should be a single number or a list/tuple with length 2.")
+        self.sigma = sigma
+
+    def forward(self, img):
+        img_gau = np.asarray(img)
+        img_gau = cv2.GaussianBlur(img_gau, self.ksize, self.sigma)
+        img = np.asarray(img)
+        res = img - img_gau
+        res = np.stack((img, res), axis=-1)
+        return Image.fromarray(res)

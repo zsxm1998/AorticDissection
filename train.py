@@ -72,7 +72,7 @@ def create_net(device,
 
     net.to(device=device)
 
-    if torch.cuda.device_count() > 1:
+    if torch.cuda.device_count() > 1 and device.type != 'cpu':
         net = nn.DataParallel(net)
         train_log.info(f'torch.cuda.device_count:{torch.cuda.device_count()}, Use nn.DataParallel')
 
@@ -122,12 +122,14 @@ def train_net(net,
             T.RandomChoice([T.RandomHorizontalFlip(), T.RandomVerticalFlip()]),
             T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.7),
             T.RandomApply([T.RandomRotation(45, T.InterpolationMode.BILINEAR)], p=0.4),
+            MT.GaussianResidual(3, 1),
             T.ToTensor(),
         ])
         val_transform = T.Compose([
             T.Resize(img_size), # 缩放图片(Image)，保持长宽比不变，最短边为img_size像素
             T.CenterCrop(img_size), # 从图片中间切出img_size*img_size的图片
             T.ToTensor(), # 将图片(Image)转成Tensor，归一化至[0, 1]
+            MT.GaussianResidual(3, 1),
             #T.Normalize(mean=[.5], std=[.5]) # 标准化至[-1, 1]，规定均值和标准差
         ])
 
@@ -382,7 +384,7 @@ def create_supcon(device,
 
     net.to(device=device)
 
-    if torch.cuda.device_count() > 1:
+    if torch.cuda.device_count() > 1 and device.type != 'cpu':
         net = nn.DataParallel(net)
         train_log.info(f'torch.cuda.device_count:{torch.cuda.device_count()}, Use nn.DataParallel')
 
@@ -594,7 +596,7 @@ def train_supcon(net,
     module.load_state_dict(torch.load(os.path.join(dir_checkpoint, 'Net_best.pth'), map_location=device))
     classifier = resnet(args.model_depth, n_channels=args.n_channels, n_classes=args.n_classes, entire=False, encoder=module.encoder)
     classifier.to(device=device)
-    if torch.cuda.device_count() > 1:
+    if torch.cuda.device_count() > 1 and device.type != 'cpu':
         classifier = nn.DataParallel(classifier)
         train_log.info(f'torch.cuda.device_count:{torch.cuda.device_count()}, Use nn.DataParallel')
     args.entire = False
