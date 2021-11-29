@@ -15,6 +15,7 @@ from torch import optim
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader, random_split, WeightedRandomSampler
+from sklearn import metrics
 from sklearn.model_selection import StratifiedShuffleSplit
 #import torchvision.models as models
 from torchvision.datasets import ImageFolder
@@ -123,13 +124,13 @@ def train_net(net,
             T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.7),
             T.RandomApply([T.RandomRotation(45, T.InterpolationMode.BILINEAR)], p=0.4),
             T.ToTensor(),
-            MT.GaussianResidual(3, 1, False),
+            #MT.GaussianResidual(3, 1, False),
         ])
         val_transform = T.Compose([
             T.Resize(img_size), # 缩放图片(Image)，保持长宽比不变，最短边为img_size像素
             T.CenterCrop(img_size), # 从图片中间切出img_size*img_size的图片
             T.ToTensor(), # 将图片(Image)转成Tensor，归一化至[0, 1]
-            MT.GaussianResidual(3, 1, False),
+            #MT.GaussianResidual(3, 1, False),
             #T.Normalize(mean=[.5], std=[.5]) # 标准化至[-1, 1]，规定均值和标准差
         ])
 
@@ -235,6 +236,8 @@ def train_net(net,
         try:
             net.train()
             epoch_loss = 0
+            true_list = []
+            pred_list = []
             with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
                 for imgs, true_categories in train_loader:
                     global_step += 1
@@ -246,11 +249,14 @@ def train_net(net,
                     imgs = imgs.to(device=device, dtype=torch.float32)
                     category_type = torch.float32 if module.n_classes == 1 else torch.long
                     true_categories = true_categories.to(device=device, dtype=category_type)
+                    true_list += true_categories.tolist()
 
                     categories_pred = net(imgs)
                     if module.n_classes > 1:
+                        pred_list += categories_pred.detach().argmax(dim=1).tolist()
                         loss = criterion(categories_pred, true_categories)
                     else:
+                        pred_list += (categories_pred.detach().squeeze(1) > 0).float()
                         loss = criterion(categories_pred, true_categories.unsqueeze(1))
                     epoch_loss += loss.item() * imgs.size(0)
                     writer.add_scalar('Loss/train', loss.item(), global_step)
@@ -265,6 +271,7 @@ def train_net(net,
                     pbar.update(imgs.shape[0])
 
             train_log.info('Train epoch {} loss: {}'.format(epoch + 1, epoch_loss / n_train))
+            train_log.info(f'Train epoch {epoch + 1} train report:\n'+metrics.classification_report(true_list, pred_list, digits=4))
 
             for tag, value in net.named_parameters():
                 tag = tag.replace('.', '/')

@@ -63,7 +63,7 @@ def eval_net(net, val_loader, n_val, device, final=False, PR_curve_save_dir=None
             plt.ylim(bottom=0)
             plt.legend() #plt.legend(loc="lower left")
             plt.savefig(os.path.join(PR_curve_save_dir, 'PR-curve.png'))
-        train_log.info('\n'+metrics.classification_report(true_list, pred_list, digits=4))
+        train_log.info('Validation report:\n'+metrics.classification_report(true_list, pred_list, digits=4))
         return ( float(np.mean(AP)), tot_loss / n_val ) if not final \
             else ( float(np.mean(AP)), tot_loss / n_val, os.path.join(PR_curve_save_dir, 'PR-curve.png') )
     else:
@@ -80,7 +80,7 @@ def eval_net(net, val_loader, n_val, device, final=False, PR_curve_save_dir=None
             plt.legend() #plt.legend(loc="lower left")
             plt.savefig(os.path.join(PR_curve_save_dir, 'PR-curve.png'))
         # print('Validation pred values:', pred_ori_list, '\nValidation true values:', true_list)
-        train_log.info('\n'+metrics.classification_report(true_list, pred_list, target_names=['negative', 'positive'], digits=4))
+        train_log.info('Validation report:\n'+metrics.classification_report(true_list, pred_list, target_names=['negative', 'positive'], digits=4))
         return ( metrics.roc_auc_score(true_list, pred_ori_list), tot_loss / n_val ) if not final \
             else ( metrics.roc_auc_score(true_list, pred_ori_list), tot_loss / n_val, os.path.join(PR_curve_save_dir, 'PR-curve.png') ) #return tot / n_val if not final else os.path.join(PR_curve_save_dir, 'PR-curve.png')
 
@@ -214,7 +214,7 @@ def eval_combine(supcon, fc, val_loader, n_val, device, n_classes, final=False, 
             plt.ylim(bottom=0)
             plt.legend()
             plt.savefig(os.path.join(PR_curve_save_dir, 'PR-curve.png'))
-        train_log.info('\n'+metrics.classification_report(true_list, pred_list, digits=4))
+        train_log.info('Validation report:\n'+metrics.classification_report(true_list, pred_list, digits=4))
         return ( float(np.mean(AP)), tot_loss / n_val, inner_dis / outer_dis ) if not final \
             else ( float(np.mean(AP)), tot_loss / n_val, inner_dis / outer_dis, os.path.join(PR_curve_save_dir, 'PR-curve.png'), os.path.join(TSNE_save_dir, 'TSNE.png') )
     else:
@@ -230,6 +230,6 @@ def eval_combine(supcon, fc, val_loader, n_val, device, n_classes, final=False, 
             plt.ylim(bottom=0)
             plt.legend()
             plt.savefig(os.path.join(PR_curve_save_dir, 'PR-curve.png'))
-        train_log.info('\n'+metrics.classification_report(true_list, pred_list, target_names=['negative', 'positive'], digits=4))
+        train_log.info('Validation report:\n'+metrics.classification_report(true_list, pred_list, target_names=['negative', 'positive'], digits=4))
         return ( metrics.roc_auc_score(true_list, pred_ori_list), tot_loss / n_val, inner_dis / outer_dis ) if not final \
             else ( metrics.roc_auc_score(true_list, pred_ori_list), tot_loss / n_val, inner_dis / outer_dis, os.path.join(PR_curve_save_dir, 'PR-curve.png'), os.path.join(TSNE_save_dir, 'TSNE.png') )
