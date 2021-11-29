@@ -15,7 +15,7 @@ save_cp: true # whether save checkpoints
 load_optim: false # load optimizer from .pth file
 load_scheduler: false # load scheduler from .pth file
 dir_img: /nfs3-p1/zsxm/dataset/aorta_classify_ct_-100_500/
-info: 高斯残差，加在totensor前面
+info: laplacian，加在totensor后面
 flag_3d: false
 depth_3d: 7
 step_3d: 1

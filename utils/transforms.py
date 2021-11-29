@@ -272,7 +272,7 @@ class ToTensor3D:
 
 
 class GaussianResidual(torch.nn.Module):
-    def __init__(self, ksize, sigma):
+    def __init__(self, ksize, sigma, before=True):
         super().__init__()
         if isinstance(ksize, int):
             assert ksize <= 0 or ksize % 2 == 1, f'ksize should be either odd or <= 0, but ksize={ksize}.'
@@ -283,11 +283,28 @@ class GaussianResidual(torch.nn.Module):
         else:
             raise TypeError("ksize should be a single number or a list/tuple with length 2.")
         self.sigma = sigma
+        self.before = before
 
     def forward(self, img):
-        img_gau = np.asarray(img)
-        img_gau = cv2.GaussianBlur(img_gau, self.ksize, self.sigma)
-        img = np.asarray(img)
-        res = img - img_gau
-        res = np.stack((img, res), axis=-1)
-        return Image.fromarray(res)
+        if self.before:
+            img = np.asarray(img)
+            img_gau = cv2.GaussianBlur(img, self.ksize, self.sigma)
+            res = img - img_gau
+            res = np.stack((img, res), axis=-1)
+            return Image.fromarray(res)
+        else:
+            # img_gau = img.permute((1,2,0)).numpy()
+            # img_gau = cv2.GaussianBlur(img_gau, self.ksize, self.sigma)
+            # img_gau = torch.from_numpy(img_gau).unsqueeze(-1).permute((2,0,1))
+            # res = img - img_gau
+            # return torch.cat([img, res], dim=0)
+            img = img.permute((1,2,0)).squeeze(-1).numpy()
+            img_gau = cv2.GaussianBlur(img, self.ksize, self.sigma)
+            g2 = cv2.Laplacian(img_gau, -1, ksize=self.ksize[0])
+            # g1_x = cv2.Sobel(img, -1, dx=1, dy=0, ksize=self.ksize[0])
+            # g1_y = cv2.Sobel(img, -1, dx=0, dy=1, ksize=self.ksize[0])
+            # g1 = np.abs(g1_x) + np.abs(g1_y)
+            # g1 = cv2.blur(g1, self.ksize)
+            res = img_gau - g2
+            res = np.stack((img, res), axis=-1)
+            return torch.from_numpy(res).permute((2,0,1))

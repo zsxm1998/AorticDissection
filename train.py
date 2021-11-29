@@ -30,9 +30,9 @@ from models.losses import SupConLoss
 from utils import transforms as MT
 
 warnings.filterwarnings("ignore")
-# np.random.seed(63910)
-# torch.manual_seed(53152)
-# torch.cuda.manual_seed_all(7987)
+np.random.seed(63910)
+torch.manual_seed(53152)
+torch.cuda.manual_seed_all(7987)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = True # faster convolutions, but more memory
 
@@ -122,14 +122,14 @@ def train_net(net,
             T.RandomChoice([T.RandomHorizontalFlip(), T.RandomVerticalFlip()]),
             T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.7),
             T.RandomApply([T.RandomRotation(45, T.InterpolationMode.BILINEAR)], p=0.4),
-            MT.GaussianResidual(3, 1),
             T.ToTensor(),
+            MT.GaussianResidual(3, 1, False),
         ])
         val_transform = T.Compose([
             T.Resize(img_size), # 缩放图片(Image)，保持长宽比不变，最短边为img_size像素
             T.CenterCrop(img_size), # 从图片中间切出img_size*img_size的图片
             T.ToTensor(), # 将图片(Image)转成Tensor，归一化至[0, 1]
-            MT.GaussianResidual(3, 1),
+            MT.GaussianResidual(3, 1, False),
             #T.Normalize(mean=[.5], std=[.5]) # 标准化至[-1, 1]，规定均值和标准差
         ])
 
@@ -286,7 +286,7 @@ def train_net(net,
                 train_log.info('Validation Area Under roc Curve(AUC): {}'.format(val_score))
                 writer.add_scalar('AUC/val', val_score, global_step)
             
-            if not flag_3d:
+            if not flag_3d and (module.n_channels == 1 or module.n_channels == 3):
                 writer.add_images('images/origin', imgs, global_step)
             if module.n_classes == 1:
                 writer.add_images('categories/true', true_categories[:, None, None, None].repeat(1,1,100,100).float(), global_step)
