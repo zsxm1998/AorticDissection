@@ -17,7 +17,7 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader, random_split, WeightedRandomSampler
 from sklearn import metrics
 from sklearn.model_selection import StratifiedShuffleSplit
-#import torchvision.models as models
+import torchvision.models as models
 from torchvision.datasets import ImageFolder
 from torchvision import transforms as T
 from PIL import Image
@@ -54,7 +54,9 @@ def create_net(device,
     if flag_3d:
         net = resnet3d(model_depth, n_channels=n_channels, n_classes=n_classes, conv1_t_size=3)
     else:
-        net = resnet(model_depth, n_channels=n_channels, n_classes=n_classes, entire=args.entire)
+        #net = resnet(model_depth, n_channels=n_channels, n_classes=n_classes, entire=args.entire)
+        net = models.efficientnet_b3(num_channels=n_channels, num_classes=n_classes)
+        net.n_channels, net.n_classes, net.net_name = n_channels, n_classes, "EfficientNet-B3"
 
     train_log.info('**********************************************************************\n'
                  f'Network: {net.net_name}\n'
@@ -219,6 +221,7 @@ def train_net(net,
     else:
         raise NotImplementedError(f'optimizer not supported: {args.optimizer}')
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=10, factor=0.1, cooldown=1, min_lr=1e-8, verbose=True)
+    #scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-8)
     if load_optim:
         optimizer.load_state_dict(torch.load(load_optim, map_location=device))
     if load_scheduler:
