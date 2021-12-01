@@ -41,6 +41,7 @@ torch.backends.cudnn.benchmark = True # faster convolutions, but more memory
 
 """************************************************** Cross Entropy **************************************************"""
 def create_net(device,
+               model_name='resnet',
                model_depth=34,
                n_channels=1,
                n_classes=4,
@@ -54,9 +55,11 @@ def create_net(device,
     if flag_3d:
         net = resnet3d(model_depth, n_channels=n_channels, n_classes=n_classes, conv1_t_size=3)
     else:
-        #net = resnet(model_depth, n_channels=n_channels, n_classes=n_classes, entire=args.entire)
-        net = models.efficientnet_b3(num_channels=n_channels, num_classes=n_classes)
-        net.n_channels, net.n_classes, net.net_name = n_channels, n_classes, "EfficientNet-B3"
+        if model_name.lower() == 'resnet':
+            net = resnet(model_depth, n_channels=n_channels, n_classes=n_classes, entire=args.entire)
+        elif model_name.lower() == 'efficientnet':
+            net = models.efficientnet_b3(num_channels=n_channels, num_classes=n_classes)
+            net.n_channels, net.n_classes, net.net_name = n_channels, n_classes, "EfficientNet-B3"
 
     train_log.info('**********************************************************************\n'
                  f'Network: {net.net_name}\n'
@@ -259,7 +262,7 @@ def train_net(net,
                         pred_list += categories_pred.detach().argmax(dim=1).tolist()
                         loss = criterion(categories_pred, true_categories)
                     else:
-                        pred_list += (categories_pred.detach().squeeze(1) > 0).float()
+                        pred_list += (categories_pred.detach().squeeze(1) > 0).float().tolist()
                         loss = criterion(categories_pred, true_categories.unsqueeze(1))
                     epoch_loss += loss.item() * imgs.size(0)
                     writer.add_scalar('Loss/train', loss.item(), global_step)
