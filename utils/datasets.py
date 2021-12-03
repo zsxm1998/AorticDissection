@@ -359,3 +359,41 @@ class AortaDataset3DCenter(Dataset):
                     img_list.append(res)
             imgs = torch.stack(img_list, dim=1)
             return imgs, label
+
+
+class MultiChannel(Dataset):
+    def __init__(self, img_dir, c2_dir, c3_dir, transform):
+        self.img_dir = img_dir
+        self.transform = transform
+        self.labels = sorted([label for label in listdir(img_dir) if isdir(join(img_dir, label))])
+        self.datas = []
+        not_exist_list = []
+        for i, label in enumerate(self.labels):
+            img_list = sorted(list(filter(lambda x: not x.startswith('.') and isfile(join(img_dir, label, x)), listdir(join(img_dir, label)))))
+            for img in img_list:
+                c1 = join(img_dir, label, img)
+                c2 = join(c2_dir, label, img)
+                c3 = join(c3_dir, label, img)
+                if not os.path.exists(c2) or not os.path.exists(c3):
+                    if not os.path.exists(c2):
+                        not_exist_list.append(c2)
+                    if not os.path.exists(c3):
+                        not_exist_list.append(c3)
+                    continue
+                self.datas.append([[c1, c2, c3], i])
+        train_log = logging.getLogger('train_log')
+        train_log.info(f'Creating dataset with {len(self.datas)} examples.')
+        train_log.info(f'{len(not_exist_list)} imgs do not exist: {not_exist_list}')
+
+    def __len__(self):
+        return len(self.datas)
+
+    def __getitem__(self, i):
+        label = torch.tensor(self.datas[i][1], dtype=torch.long)
+        img_path_list = self.datas[i][0]
+        img_list = []
+        for img_path in img_path_list:
+            img_list.append(Image.open(img_path))
+        img = Image.merge('RGB', img_list)
+        img = self.transform(img)
+        return img, label

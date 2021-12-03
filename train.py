@@ -25,7 +25,7 @@ from PIL import Image
 from utils.eval import eval_net, eval_supcon
 from utils.print_log import train_log
 from models.resnet3d import SupConResNet3D, resnet3d
-from utils.datasets import AortaDataset3D, LabelSampler, AortaDataset3DCenter
+from utils.datasets import AortaDataset3D, LabelSampler, AortaDataset3DCenter, MultiChannel
 from models.SupCon import *
 from models.losses import SupConLoss
 from utils import transforms as MT
@@ -175,8 +175,10 @@ def train_net(net,
         train = AortaDataset3DCenter(os.path.join(dir_img, 'train'), transform=train_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
         val = AortaDataset3DCenter(os.path.join(dir_img, 'val'), transform=val_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
     else:
-        train = ImageFolder(os.path.join(dir_img, 'train'), transform=train_transform, loader=lambda path: Image.open(path))
-        val = ImageFolder(os.path.join(dir_img, 'val'), transform=val_transform, loader=lambda path: Image.open(path))
+        # train = ImageFolder(os.path.join(dir_img, 'train'), transform=train_transform, loader=lambda path: Image.open(path))
+        # val = ImageFolder(os.path.join(dir_img, 'val'), transform=val_transform, loader=lambda path: Image.open(path))
+        train = MultiChannel(os.path.join(dir_img, 'train'), '/nfs3-p1/zsxm/dataset/aorta_classify_ct_0_300', '/nfs3-p1/zsxm/dataset/aorta_classify_ct_0_100', train_transform)
+        val = MultiChannel(os.path.join(dir_img, 'val'), '/nfs3-p1/zsxm/dataset/aorta_classify_ct_0_300', '/nfs3-p1/zsxm/dataset/aorta_classify_ct_0_100', val_transform)
     
     lsampler = None#LabelSampler(train)
     n_train = len(train) #len(lsampler)
