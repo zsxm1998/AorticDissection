@@ -2,7 +2,6 @@ import os
 import sys
 import warnings
 import time
-from torch.nn import modules
 import yaml
 from types import SimpleNamespace
 

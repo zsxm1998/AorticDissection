@@ -18,15 +18,14 @@ import torchvision.models as models
 from torchvision.datasets import ImageFolder
 from torchvision import transforms as T
 from PIL import Image
-from libauc.losses import AUCMLoss
-from libauc.optimizers import PESG
 
 from utils.eval import eval_net
 from utils.print_log import train_log
 from models.resnet3d import resnet3d
 from utils.datasets import AortaDataset3DCenter
 from models.SupCon import *
-from utils import transforms as MT
+import utils.transforms as MT
+from models.losses import GradConstraint, GradIntegral
 
 warnings.filterwarnings("ignore")
 np.random.seed(63910)
@@ -76,10 +75,6 @@ def create_net(device,
 
     net.to(device=device)
 
-    if torch.cuda.device_count() > 1 and device.type != 'cpu':
-        net = nn.DataParallel(net)
-        train_log.info(f'torch.cuda.device_count:{torch.cuda.device_count()}, Use nn.DataParallel')
-
     return net
 
 
@@ -92,18 +87,17 @@ def train_net(net,
               save_cp=True,
               load_optim=False,
               load_scheduler=False,
-              dir_checkpoint='details/checkpoints/AUROC',
+              dir_checkpoint='details/checkpoints/ModelDoctor',
               dir_img='/nfs3-p1/zsxm/dataset/aorta_classify_ct/',
               flag_3d=False,
               info='',
               **kwargs):
 
     args = SimpleNamespace(**kwargs)
-    module = net.module if isinstance(net, nn.DataParallel) else net
     
     os.makedirs(dir_checkpoint, exist_ok=True)
     dir_checkpoint = os.path.join(dir_checkpoint, train_log.train_time_str + '/')
-    writer = SummaryWriter(log_dir=f'details/runs/{train_log.train_time_str}_{module.net_name}_LR_{lr}_BS_{batch_size}_ImgSize_{img_size}')
+    writer = SummaryWriter(log_dir=f'details/runs/{train_log.train_time_str}_{net.net_name}_LR_{lr}_BS_{batch_size}_ImgSize_{img_size}')
 
     if flag_3d:
         train_transform = T.Compose([
@@ -163,16 +157,21 @@ def train_net(net,
         Training info:   {info}
     ''')
 
-    if module.n_classes > 1:
-        raise ValueError('n_classes should be 1')
+    if net.n_classes > 1:
+        criterion = nn.CrossEntropyLoss()
     else:
-        tg = torch.tensor(train.targets)
-        imratio = ((tg == 1).float().sum() / (tg == 0).float().sum()).item()
-        train_log.info(f'imratio = {imratio}')
-        criterion = AUCMLoss(imratio=imratio)
+        criterion = nn.BCEWithLogitsLoss() # FocalLoss(alpha=1/2) # pos_weight=torch.tensor([0.8]).to(device)
 
-    if args.optimizer.lower() == 'pesg':
-        optimizer = PESG(net, a=criterion.a, b=criterion.b, alpha=criterion.alpha, imratio=imratio, lr=lr)
+    if args.model_name.lower() == 'resnet':
+        gi = GradIntegral(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1])
+        gc = GradConstraint(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1], ['/nfs3-p2/zsxm/temp_path/conv2.npy', '/nfs3-p2/zsxm/temp_path/conv1.npy'])
+
+    if args.optimizer.lower() == 'rmsprop':
+        optimizer = optim.RMSprop(net.parameters() if args.entire else net.fc.parameters(), lr=lr, weight_decay=1e-8, momentum=0.9)
+    elif args.optimizer.lower() == 'adam':
+        optimizer = optim.Adam(net.parameters() if args.entire else net.fc.parameters(), lr=lr)
+    elif args.optimizer.lower() == 'nadam':
+        optimizer = optim.NAdam(net.parameters() if args.entire else net.fc.parameters(), lr=lr)
     else:
         raise NotImplementedError(f'optimizer not supported: {args.optimizer}')
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=10, factor=0.1, cooldown=1, min_lr=1e-8, verbose=True)
@@ -183,30 +182,42 @@ def train_net(net,
         scheduler.load_state_dict(torch.load(load_scheduler, map_location=device))
 
     global_step = 0
-    best_val_score = -1 #float('inf') if module.n_classes > 1 else -1
+    best_val_score = -1 #float('inf') if net.n_classes > 1 else -1
     useless_epoch_count = 0
     for epoch in range(epochs):
         try:
             net.train()
+            gi.add_noise()
+            gc.add_hook()
             epoch_loss = 0
             true_list = []
             pred_list = []
             with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
                 for imgs, true_categories in train_loader:
                     global_step += 1
-                    assert imgs.shape[1] == module.n_channels, \
-                        f'Network has been defined with {module.n_channels} input channels, ' \
+                    assert imgs.shape[1] == net.n_channels, \
+                        f'Network has been defined with {net.n_channels} input channels, ' \
                         f'but loaded images have {imgs.shape[1]} channels. Please check that ' \
                         'the images are loaded correctly.'
 
                     imgs = imgs.to(device=device, dtype=torch.float32)
-                    category_type = torch.float32 if module.n_classes == 1 else torch.long
+                    category_type = torch.float32 if net.n_classes == 1 else torch.long
                     true_categories = true_categories.to(device=device, dtype=category_type)
                     true_list += true_categories.tolist()
 
-                    categories_pred = F.sigmoid(net(imgs))
-                    pred_list += (categories_pred.detach().squeeze(1) > 0.5).float().tolist()
-                    loss = criterion(categories_pred, true_categories.unsqueeze(1))
+                    categories_pred = net(imgs)
+
+                    if net.n_classes > 1:
+                        pred_list += categories_pred.detach().argmax(dim=1).tolist()
+                        loss_cls = criterion(categories_pred, true_categories)
+                        loss_channel = gc.loss_channel(categories_pred, true_categories)
+                    else:
+                        pred_list += (categories_pred.detach().squeeze(1) > 0).float().tolist()
+                        loss_cls = criterion(categories_pred, true_categories.unsqueeze(1))
+                        loss_channel = torch.tensor(0)
+                    
+                    loss = loss_cls + loss_channel * 1000
+
                     epoch_loss += loss.item() * imgs.size(0)
                     writer.add_scalar('Loss/train', loss.item(), global_step)
 
@@ -218,6 +229,9 @@ def train_net(net,
                     optimizer.step()
 
                     pbar.update(imgs.shape[0])
+
+            gi.remove_noise()
+            gc.remove_hook()
 
             train_log.info('Train epoch {} loss: {}'.format(epoch + 1, epoch_loss / n_train))
             train_log.info(f'Train epoch {epoch + 1} train report:\n'+metrics.classification_report(true_list, pred_list, digits=4))
@@ -231,7 +245,7 @@ def train_net(net,
             scheduler.step(val_score)
             writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], global_step)
 
-            if module.n_classes > 1:
+            if net.n_classes > 1:
                 train_log.info('Validation cross entropy: {}'.format(val_loss))
                 writer.add_scalar('Loss/val', val_loss, global_step)
                 train_log.info('Validation mean Average Precision(mAP): {}'.format(val_score))
@@ -242,9 +256,9 @@ def train_net(net,
                 train_log.info('Validation Area Under roc Curve(AUC): {}'.format(val_score))
                 writer.add_scalar('AUC/val', val_score, global_step)
             
-            if not flag_3d and (module.n_channels == 1 or module.n_channels == 3):
+            if not flag_3d and (net.n_channels == 1 or net.n_channels == 3):
                 writer.add_images('images/origin', imgs, global_step)
-            if module.n_classes == 1:
+            if net.n_classes == 1:
                 writer.add_images('categories/true', true_categories[:, None, None, None].repeat(1,1,100,100).float(), global_step)
                 writer.add_images('categories/pred', (torch.sigmoid(categories_pred)>0.5)[:, :, None, None].repeat(1,1,100,100), global_step)
             else:
@@ -252,18 +266,18 @@ def train_net(net,
                 true_categories_img = torch.zeros(true_categories.shape[0], 100, 100, 3, dtype = torch.uint8)
                 categories_pred_img = torch.zeros(categories_pred.shape[0], 100, 100, 3, dtype = torch.uint8)
                 categories_pred_idx = categories_pred.argmax(dim=1)
-                for category in range(1, module.n_classes):
+                for category in range(1, net.n_classes):
                     true_categories_img[true_categories==category] = color_list[category]
                     categories_pred_img[categories_pred_idx==category] = color_list[category]
                 writer.add_images('categories/true', true_categories_img, global_step, dataformats='NHWC')
                 writer.add_images('categories/pred', categories_pred_img, global_step, dataformats='NHWC')
 
-            if val_score > best_val_score: #val_score < best_val_score if module.n_classes > 1 else val_score > best_val_score:
+            if val_score > best_val_score: #val_score < best_val_score if net.n_classes > 1 else val_score > best_val_score:
                 best_val_score = val_score
                 if not os.path.exists(dir_checkpoint):
                     os.makedirs(dir_checkpoint)
                     train_log.info('Created checkpoint directory')
-                torch.save(module.state_dict(), dir_checkpoint + 'Net_best.pth')
+                torch.save(net.state_dict(), dir_checkpoint + 'Net_best.pth')
                 train_log.info('Best model saved !')
                 useless_epoch_count = 0
             else:
@@ -273,7 +287,7 @@ def train_net(net,
                 if not os.path.exists(dir_checkpoint):
                     os.makedirs(dir_checkpoint)
                     train_log.info('Created checkpoint directory')
-                torch.save(module.state_dict(), dir_checkpoint + f'Net_epoch{epoch + 1}.pth')
+                torch.save(net.state_dict(), dir_checkpoint + f'Net_epoch{epoch + 1}.pth')
                 train_log.info(f'Checkpoint {epoch + 1} saved !')
 
             if args.early_stopping and useless_epoch_count == args.early_stopping:
@@ -281,12 +295,14 @@ def train_net(net,
                 break
         except KeyboardInterrupt:
             train_log.info('Receive KeyboardInterrupt, stop training...')
+            gi.remove_noise()
+            gc.remove_hook()
             break
 
     torch.save(optimizer.state_dict(), dir_checkpoint + f'Optimizer.pth')
     torch.save(scheduler.state_dict(), dir_checkpoint + f'lrScheduler.pth')
     if not save_cp:
-        torch.save(module.state_dict(), dir_checkpoint + 'Net_last.pth')
+        torch.save(net.state_dict(), dir_checkpoint + 'Net_last.pth')
         train_log.info('Last model saved !')
 
     # print PR-curve
@@ -296,7 +312,7 @@ def train_net(net,
     net = create_net(device, **vars(args))
     val_score, val_loss, PR_curve_img = eval_net(net, val_loader, n_val, device, final=True, PR_curve_save_dir=dir_checkpoint)
     writer.add_images('PR-curve', np.array(Image.open(PR_curve_img)), dataformats='HWC')
-    if module.n_classes > 1:
+    if net.n_classes > 1:
         train_log.info('Validation cross entropy: {}'.format(val_loss))
         train_log.info('Validation mean Average Precision(mAP): {}'.format(val_score))
     else:
@@ -326,19 +342,18 @@ if __name__ == '__main__':
     args.pop('device')
     train_log.info(f'Using device {device}')
 
-    if args['method'].lower() == 'auroc':
+    if args['method'].lower() == 'model_doctor':
         net = create_net(device, **args)
     else:
         raise NotImplementedError(f'method not supported: {args["method"]}')
 
     try:
-        if args['method'].lower() == 'auroc':
+        if args['method'].lower() == 'model_doctor':
             train_net(net, device, **args)
         else:
             raise NotImplementedError(f'method not supported: {args["method"]}')
     except KeyboardInterrupt:
-        module = net.module if isinstance(net, nn.DataParallel) else net
-        torch.save(module.state_dict(), f'details/checkpoints/{module.__class__.__name__}_{time.strftime("%m-%d_%H:%M:%S", time.localtime())}_INTERRUPTED.pth')
+        torch.save(net.state_dict(), f'details/checkpoints/{net.__class__.__name__}_{time.strftime("%m-%d_%H:%M:%S", time.localtime())}_INTERRUPTED.pth')
         train_log.info('Saved interrupt')
         try:
             sys.exit(0)
