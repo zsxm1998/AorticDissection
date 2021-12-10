@@ -22,7 +22,7 @@ from PIL import Image
 from utils.eval import eval_net
 from utils.print_log import train_log
 from models.resnet3d import resnet3d
-from utils.datasets import AortaDataset3DCenter
+from utils.datasets import AortaDataset3DCenter, MaskDataset
 from models.SupCon import *
 import utils.transforms as MT
 from models.losses import GradConstraint, GradIntegral
@@ -115,12 +115,12 @@ def train_net(net,
         ])
     else:
         train_transform = T.Compose([
-            T.Resize(img_size),
-            T.CenterCrop(img_size),
-            T.RandomChoice([T.RandomHorizontalFlip(), T.RandomVerticalFlip()]),
-            T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.7),
-            T.RandomApply([T.RandomRotation(45, T.InterpolationMode.BILINEAR)], p=0.4),
-            T.ToTensor(),
+            MT.Resize3D(img_size),
+            MT.CenterCrop3D(img_size),
+            T.RandomChoice([MT.RandomHorizontalFlip3D(), MT.RandomVerticalFlip3D()]),
+            T.RandomApply([MT.ColorJitter3D(0.4, 0.4, 0.4, 0.1, apply_idx=[0])], p=0.7),
+            T.RandomApply([MT.RandomRotation3D(45, T.InterpolationMode.BILINEAR)], p=0.4),
+            MT.ToTensor3D(),
             #MT.GaussianResidual(3, 1, False),
         ])
         val_transform = T.Compose([
@@ -135,7 +135,7 @@ def train_net(net,
         train = AortaDataset3DCenter(os.path.join(dir_img, 'train'), transform=train_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
         val = AortaDataset3DCenter(os.path.join(dir_img, 'val'), transform=val_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
     else:
-        train = ImageFolder(os.path.join(dir_img, 'train'), transform=train_transform, loader=lambda path: Image.open(path))
+        train = MaskDataset(os.path.join(dir_img, 'train'), mask_dir=os.path.join(dir_img, 'mask'), transform=train_transform)
         val = ImageFolder(os.path.join(dir_img, 'val'), transform=val_transform, loader=lambda path: Image.open(path))
     
     lsampler = None#LabelSampler(train)
@@ -163,8 +163,9 @@ def train_net(net,
         criterion = nn.BCEWithLogitsLoss() # FocalLoss(alpha=1/2) # pos_weight=torch.tensor([0.8]).to(device)
 
     if args.model_name.lower() == 'resnet':
-        gi = GradIntegral(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1])
-        gc = GradConstraint(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1], ['/nfs3-p2/zsxm/temp_path/conv2.npy', '/nfs3-p2/zsxm/temp_path/conv1.npy'])
+        gi = GradIntegral(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1, net.encoder.layer3[5].conv2, net.encoder.layer2[3].conv2])
+        gc = GradConstraint(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1, net.encoder.layer3[5].conv2, net.encoder.layer2[3].conv2], 
+                            ['/nfs3-p2/zsxm/temp_path/conv2.npy', '/nfs3-p2/zsxm/temp_path/conv1.npy', '/nfs3-p2/zsxm/temp_path/layer3_conv2.npy', '/nfs3-p2/zsxm/temp_path/layer2_conv2.npy'])
 
     if args.optimizer.lower() == 'rmsprop':
         optimizer = optim.RMSprop(net.parameters() if args.entire else net.fc.parameters(), lr=lr, weight_decay=1e-8, momentum=0.9)
@@ -193,7 +194,7 @@ def train_net(net,
             true_list = []
             pred_list = []
             with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
-                for imgs, true_categories in train_loader:
+                for imgs, masks, true_categories in train_loader:
                     global_step += 1
                     assert imgs.shape[1] == net.n_channels, \
                         f'Network has been defined with {net.n_channels} input channels, ' \
@@ -201,6 +202,7 @@ def train_net(net,
                         'the images are loaded correctly.'
 
                     imgs = imgs.to(device=device, dtype=torch.float32)
+                    masks = masks.to(device=device, dtype=torch.float32)
                     category_type = torch.float32 if net.n_classes == 1 else torch.long
                     true_categories = true_categories.to(device=device, dtype=category_type)
                     true_list += true_categories.tolist()
@@ -211,12 +213,13 @@ def train_net(net,
                         pred_list += categories_pred.detach().argmax(dim=1).tolist()
                         loss_cls = criterion(categories_pred, true_categories)
                         loss_channel = gc.loss_channel(categories_pred, true_categories)
+                        loss_spatial = gc.loss_spatial(categories_pred, true_categories, masks)
                     else:
                         pred_list += (categories_pred.detach().squeeze(1) > 0).float().tolist()
                         loss_cls = criterion(categories_pred, true_categories.unsqueeze(1))
-                        loss_channel = torch.tensor(0)
-                    
-                    loss = loss_cls + loss_channel * 1000
+                        loss_channel, loss_spatial = torch.tensor(0), torch.tensor(0)
+                    #print('loss_cls:', loss_cls.item(), ', loss_channel:', loss_channel.item(), ', loss_spatial:', loss_spatial.item())
+                    loss = loss_cls + loss_channel * 1000 + loss_spatial * 1000
 
                     epoch_loss += loss.item() * imgs.size(0)
                     writer.add_scalar('Loss/train', loss.item(), global_step)

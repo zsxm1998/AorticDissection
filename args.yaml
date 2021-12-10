@@ -1,10 +1,10 @@
-device: 2 # cuda device to use, i.e. 0 or 0,1,2,3 or cpu'
+device: 0 # cuda device to use, i.e. 0 or 0,1,2,3 or cpu'
 method: model_doctor
 model_name: resnet
 model_depth: 34
 n_channels: 1
 n_classes: 4
-load_model: false #/nfs3-p2/zsxm/temp_path/single81.pth
+load_model: /nfs3-p2/zsxm/temp_path/single81.pth
 epochs: 50
 early_stopping: 0
 batch_size: 128
@@ -16,7 +16,7 @@ save_cp: false # whether save checkpoints
 load_optim: false # load optimizer from .pth file
 load_scheduler: false # load scheduler from .pth file
 dir_img: /nfs3-p2/zsxm/dataset/aorta_classify_ct_-100_500/
-info: model doctor 改变了通道约束和分类约束的系数，从头训练
+info: model doctor 增加layer3和layer2，继续训练
 flag_3d: false
 depth_3d: 7
 step_3d: 1

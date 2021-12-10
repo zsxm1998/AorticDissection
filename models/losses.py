@@ -135,13 +135,22 @@ class GradConstraint:
         self.hook_modules.clear()
 
     def loss_spatial(self, outputs, labels, masks):
-        nll_loss = torch.nn.NLLLoss()(outputs, labels)
-        grads = self.hook_modules[0].grads(outputs=-nll_loss)
-        masks = transforms.Resize((grads.shape[2], grads.shape[3]))(masks)
-        masks_bg = 1 - masks
-        grads_bg = torch.abs(masks_bg * grads)
+        # nll_loss = torch.nn.NLLLoss()(outputs, labels)
+        # grads = self.hook_modules[0].grads(outputs=-nll_loss)
+        # masks = transforms.Resize((grads.shape[2], grads.shape[3]))(masks)
+        # masks_bg = 1 - masks
+        # grads_bg = torch.abs(masks_bg * grads)
 
-        loss = grads_bg.sum()
+        # loss = grads_bg.sum()
+        # return loss
+        nll_loss = torch.nn.NLLLoss()(outputs, labels)
+        loss = 0
+        for hook_module in self.hook_modules:
+            grads = hook_module.grads(outputs=-nll_loss)
+            masks_bg = transforms.Resize((grads.shape[2], grads.shape[3]))(masks)
+            masks_bg = 1 - masks_bg
+            grads_bg = torch.abs(masks_bg * grads)
+            loss += grads_bg.sum()
         return loss
 
     def loss_channel(self, outputs, labels):

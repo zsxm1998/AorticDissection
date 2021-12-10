@@ -111,13 +111,14 @@ class RandomVerticalFlip3D(torch.nn.Module):
 
 
 class ColorJitter3D(torch.nn.Module):
-    def __init__(self, brightness=0, contrast=0, saturation=0, hue=0):
+    def __init__(self, brightness=0, contrast=0, saturation=0, hue=0, apply_idx=None):
         super().__init__()
         self.brightness = self._check_input(brightness, 'brightness')
         self.contrast = self._check_input(contrast, 'contrast')
         self.saturation = self._check_input(saturation, 'saturation')
         self.hue = self._check_input(hue, 'hue', center=0, bound=(-0.5, 0.5),
                                      clip_first_on_zero=False)
+        self.apply_idx = apply_idx
 
     @torch.jit.unused
     def _check_input(self, value, name, center=1, bound=(0, float('inf')), clip_first_on_zero=True):
@@ -160,13 +161,13 @@ class ColorJitter3D(torch.nn.Module):
 
         for fn_id in fn_idx:
             if fn_id == 0 and brightness_factor is not None:
-                imgs = [TF.adjust_brightness(img, brightness_factor) for img in imgs]
+                imgs = [TF.adjust_brightness(img, brightness_factor) if self.apply_idx is None or i in self.apply_idx else img for i, img in enumerate(imgs)]
             elif fn_id == 1 and contrast_factor is not None:
-                imgs = [TF.adjust_contrast(img, contrast_factor) for img in imgs]
+                imgs = [TF.adjust_contrast(img, contrast_factor) if self.apply_idx is None or i in self.apply_idx else img for i, img in enumerate(imgs)]
             elif fn_id == 2 and saturation_factor is not None:
-                imgs = [TF.adjust_saturation(img, saturation_factor) for img in imgs]
+                imgs = [TF.adjust_saturation(img, saturation_factor) if self.apply_idx is None or i in self.apply_idx else img for i, img in enumerate(imgs)]
             elif fn_id == 3 and hue_factor is not None:
-                imgs = [TF.adjust_hue(img, hue_factor) for img in imgs]
+                imgs = [TF.adjust_hue(img, hue_factor) if self.apply_idx is None or i in self.apply_idx else img for i, img in enumerate(imgs)]
 
         return imgs
 

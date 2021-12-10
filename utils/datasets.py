@@ -17,6 +17,7 @@ import numpy as np
 import torch
 from PIL import Image
 from torch.utils.data import Dataset, Sampler
+from torchvision import transforms as T
 
 from utils.augmentations import letterbox
 
@@ -397,3 +398,35 @@ class MultiChannel(Dataset):
         img = Image.merge('RGB', img_list)
         img = self.transform(img)
         return img, label
+
+
+class MaskDataset(Dataset):
+    def __init__(self, img_dir, mask_dir, transform):
+        self.img_dir = img_dir
+        self.mask_dir = mask_dir
+        self.transform = transform
+        self.labels = sorted([label for label in listdir(img_dir) if isdir(join(img_dir, label))])
+        self.datas = []
+        for i, label in enumerate(self.labels):
+            img_list = sorted(list(filter(lambda x: not x.startswith('.') and isfile(join(img_dir, label, x)), listdir(join(img_dir, label)))))
+            for img in img_list:
+                img_path = join(img_dir, label, img)
+                mask_path = join(mask_dir, img)
+                if not os.path.exists(mask_path):
+                    mask_path = None
+                self.datas.append([img_path, mask_path, i])
+        train_log = logging.getLogger('train_log')
+        train_log.info(f'Creating dataset with {len(self.datas)} examples.')
+
+    def __len__(self):
+        return len(self.datas)
+
+    def __getitem__(self, i):
+        label = torch.tensor(self.datas[i][2], dtype=torch.long)
+        img = Image.open(self.datas[i][0])
+        if self.datas[i][1] is None:
+            mask = Image.fromarray(np.ones((img.height, img.width), dtype=np.uint8)*255)
+        else:
+            mask = Image.open(self.datas[i][1])
+        img, mask = self.transform([img, mask])
+        return img, mask, label
