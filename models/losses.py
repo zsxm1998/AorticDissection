@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torchvision import transforms
 
 
@@ -173,7 +174,8 @@ class GradConstraint:
             loss += self._loss_channel(channels=self.channels[i],
                                   grads=hook_module.grads(outputs=-nll_loss_),
                                   labels=labels_,
-                                  is_high=True)
+                                  is_high=True,
+                                  labels_t=labels)
 
             # low response channel loss
             loss += self._loss_channel(channels=self.channels[i],
@@ -183,14 +185,14 @@ class GradConstraint:
         return loss
 
     @staticmethod
-    def _loss_channel(channels, grads, labels, is_high=True):
+    def _loss_channel(channels, grads, labels, is_high=True, labels_t=None):
         grads = torch.abs(grads)
         channel_grads = torch.sum(grads, dim=(2, 3))  # [batch_size, channels]
 
         loss = 0
         if is_high:
-            for b, l in enumerate(labels):
-                loss += (channel_grads[b] * channels[l]).sum()
+            for b, (l, lt) in enumerate(zip(labels, labels_t)):
+                loss += (channel_grads[b] * F.relu(channels[l]-channels[lt])).sum()
         else:
             for b, l in enumerate(labels):
                 loss += (channel_grads[b] * (1 - channels[l])).sum()
