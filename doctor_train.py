@@ -163,9 +163,14 @@ def train_net(net,
         criterion = nn.BCEWithLogitsLoss() # FocalLoss(alpha=1/2) # pos_weight=torch.tensor([0.8]).to(device)
 
     if args.model_name.lower() == 'resnet':
-        gi = GradIntegral(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1, net.encoder.layer3[5].conv2, net.encoder.layer2[3].conv2])
-        gc = GradConstraint(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1, net.encoder.layer3[5].conv2, net.encoder.layer2[3].conv2], 
-                            ['/nfs3-p2/zsxm/temp_path/conv2.npy', '/nfs3-p2/zsxm/temp_path/conv1.npy', '/nfs3-p2/zsxm/temp_path/layer3_conv2.npy', '/nfs3-p2/zsxm/temp_path/layer2_conv2.npy'])
+        if args.noise:
+            gi = GradIntegral(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1, net.encoder.layer3[5].conv2, net.encoder.layer2[3].conv2])
+        if flag_3d:
+            gc = GradConstraint(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1], 
+                                ['/nfs3-p2/zsxm/temp_path/3dconv2.npy', '/nfs3-p2/zsxm/temp_path/3dconv1.npy'], flag_3d=flag_3d)
+        else:
+            gc = GradConstraint(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1, net.encoder.layer3[5].conv2, net.encoder.layer2[3].conv2], 
+                                ['/nfs3-p2/zsxm/temp_path/conv2.npy', '/nfs3-p2/zsxm/temp_path/conv1.npy', '/nfs3-p2/zsxm/temp_path/layer3_conv2.npy', '/nfs3-p2/zsxm/temp_path/layer2_conv2.npy'])
 
     if args.optimizer.lower() == 'rmsprop':
         optimizer = optim.RMSprop(net.parameters() if args.entire else net.fc.parameters(), lr=lr, weight_decay=1e-8, momentum=0.9)
@@ -188,13 +193,18 @@ def train_net(net,
     for epoch in range(epochs):
         try:
             net.train()
-            gi.add_noise()
+            if args.noise:
+                gi.add_noise()
             gc.add_hook()
             epoch_loss = 0
             true_list = []
             pred_list = []
             with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
-                for imgs, masks, true_categories in train_loader:
+                for datas in train_loader:
+                    if flag_3d:
+                        imgs, true_categories = datas
+                    else:
+                        imgs, masks, true_categories = datas
                     global_step += 1
                     assert imgs.shape[1] == net.n_channels, \
                         f'Network has been defined with {net.n_channels} input channels, ' \
@@ -202,7 +212,8 @@ def train_net(net,
                         'the images are loaded correctly.'
 
                     imgs = imgs.to(device=device, dtype=torch.float32)
-                    masks = masks.to(device=device, dtype=torch.float32)
+                    if not flag_3d:
+                        masks = masks.to(device=device, dtype=torch.float32)
                     category_type = torch.float32 if net.n_classes == 1 else torch.long
                     true_categories = true_categories.to(device=device, dtype=category_type)
                     true_list += true_categories.tolist()
@@ -213,11 +224,14 @@ def train_net(net,
                         pred_list += categories_pred.detach().argmax(dim=1).tolist()
                         loss_cls = criterion(categories_pred, true_categories)
                         loss_channel = gc.loss_channel(categories_pred, true_categories)
-                        loss_spatial = gc.loss_spatial(categories_pred, true_categories, masks)
+                        if not flag_3d:
+                            loss_spatial = gc.loss_spatial(categories_pred, true_categories, masks)
+                        else:
+                            loss_spatial = torch.tensor(0).to(device)
                     else:
                         pred_list += (categories_pred.detach().squeeze(1) > 0).float().tolist()
                         loss_cls = criterion(categories_pred, true_categories.unsqueeze(1))
-                        loss_channel, loss_spatial = torch.tensor(0), torch.tensor(0)
+                        loss_channel, loss_spatial = torch.tensor(0).to(device), torch.tensor(0).to(device)
                     #print('loss_cls:', loss_cls.item(), ', loss_channel:', loss_channel.item(), ', loss_spatial:', loss_spatial.item())
                     loss = loss_cls + loss_channel * 1000 + loss_spatial * 1000
 
@@ -233,7 +247,8 @@ def train_net(net,
 
                     pbar.update(imgs.shape[0])
 
-            gi.remove_noise()
+            if args.noise:
+                gi.remove_noise()
             gc.remove_hook()
 
             train_log.info('Train epoch {} loss: {}'.format(epoch + 1, epoch_loss / n_train))
@@ -298,7 +313,8 @@ def train_net(net,
                 break
         except KeyboardInterrupt:
             train_log.info('Receive KeyboardInterrupt, stop training...')
-            gi.remove_noise()
+            if args.noise:
+                gi.remove_noise()
             gc.remove_hook()
             break
 

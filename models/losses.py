@@ -117,11 +117,12 @@ class HookModule:
 
 class GradConstraint:
 
-    def __init__(self, model, modules, channel_paths):
+    def __init__(self, model, modules, channel_paths, flag_3d=False):
         self.model = model
         self.modules = modules
         self.hook_modules = []
         self.channels = []
+        self.flag_3d = flag_3d
 
         for channel_path in channel_paths:
             self.channels.append(torch.from_numpy(np.load(channel_path)).cuda())
@@ -174,8 +175,7 @@ class GradConstraint:
             loss += self._loss_channel(channels=self.channels[i],
                                   grads=hook_module.grads(outputs=-nll_loss_),
                                   labels=labels_,
-                                  is_high=True,
-                                  labels_t=labels)
+                                  is_high=True)
 
             # low response channel loss
             loss += self._loss_channel(channels=self.channels[i],
@@ -184,15 +184,14 @@ class GradConstraint:
                                   is_high=False)
         return loss
 
-    @staticmethod
-    def _loss_channel(channels, grads, labels, is_high=True, labels_t=None):
+    def _loss_channel(self, channels, grads, labels, is_high=True):
         grads = torch.abs(grads)
-        channel_grads = torch.sum(grads, dim=(2, 3))  # [batch_size, channels]
+        channel_grads = torch.sum(grads, dim=(2, 3)) if not self.flag_3d else torch.sum(grads, dim=(2, 3, 4))  # [batch_size, channels]
 
         loss = 0
         if is_high:
-            for b, (l, lt) in enumerate(zip(labels, labels_t)):
-                loss += (channel_grads[b] * F.relu(channels[l]-channels[lt])).sum()
+            for b, l in enumerate(labels):
+                loss += (channel_grads[b] * channels[l]).sum()
         else:
             for b, l in enumerate(labels):
                 loss += (channel_grads[b] * (1 - channels[l])).sum()
