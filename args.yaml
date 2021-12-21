@@ -1,4 +1,4 @@
-device: 1 # cuda device to use, i.e. 0 or 0,1,2,3 or cpu'
+device: 0 # cuda device to use, i.e. 0 or 0,1,2,3 or cpu'
 method: model_doctor
 model_name: resnet
 model_depth: 34
@@ -16,7 +16,7 @@ save_cp: false # whether save checkpoints
 load_optim: false # load optimizer from .pth file
 load_scheduler: false # load scheduler from .pth file
 dir_img: /nfs3-p2/zsxm/dataset/aorta_classify_ct_-100_500/
-info: model docter 加噪声，使用正梯度，继续训练
+info: model docter 加噪声，使用绝对值梯度，继续训练，通道约束只使用第一个
 flag_3d: false
 depth_3d: 7
 step_3d: 1

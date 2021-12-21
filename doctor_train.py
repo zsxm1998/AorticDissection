@@ -170,7 +170,7 @@ def train_net(net,
                                 ['/nfs3-p2/zsxm/temp_path/3dconv2.npy', '/nfs3-p2/zsxm/temp_path/3dconv1.npy'], flag_3d=flag_3d)
         else:
             gc = GradConstraint(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1, net.encoder.layer3[5].conv2, net.encoder.layer2[3].conv2], 
-                                ['/nfs3-p2/zsxm/temp_path/pos_conv2.npy', '/nfs3-p2/zsxm/temp_path/pos_conv1.npy', '/nfs3-p2/zsxm/temp_path/pos_layer3_conv2.npy', '/nfs3-p2/zsxm/temp_path/pos_layer2_conv2.npy'])
+                                ['/nfs3-p2/zsxm/temp_path/conv2.npy', '/nfs3-p2/zsxm/temp_path/conv1.npy', '/nfs3-p2/zsxm/temp_path/layer3_conv2.npy', '/nfs3-p2/zsxm/temp_path/layer2_conv2.npy'])
 
     if args.optimizer.lower() == 'rmsprop':
         optimizer = optim.RMSprop(net.parameters() if args.entire else net.fc.parameters(), lr=lr, weight_decay=1e-8, momentum=0.9)

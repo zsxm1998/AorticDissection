@@ -151,7 +151,7 @@ class GradConstraint:
             grads = hook_module.grads(outputs=-nll_loss)
             masks_bg = transforms.Resize((grads.shape[2], grads.shape[3]))(masks)
             masks_bg = 1 - masks_bg
-            grads_bg = F.relu(masks_bg * grads) #torch.abs(masks_bg * grads)
+            grads_bg = torch.abs(masks_bg * grads) #F.relu(masks_bg * grads)
             loss += grads_bg.sum()
         return loss
 
@@ -182,10 +182,11 @@ class GradConstraint:
                                   grads=hook_module.grads(outputs=-nll_loss),
                                   labels=labels,
                                   is_high=False)
+            break
         return loss
 
     def _loss_channel(self, channels, grads, labels, is_high=True):
-        grads = F.relu(grads) #torch.abs(grads)
+        grads =  torch.abs(grads) #F.relu(grads)
         channel_grads = torch.sum(grads, dim=(2, 3)) if not self.flag_3d else torch.sum(grads, dim=(2, 3, 4))  # [batch_size, channels]
 
         loss = 0
