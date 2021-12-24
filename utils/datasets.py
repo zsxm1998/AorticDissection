@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 import re
 from os import listdir
-from os.path import join, isdir, isfile
+from os.path import join, isdir, isfile, exists
 import logging
 
 import cv2
@@ -262,7 +262,7 @@ class LabelSampler(Sampler[int]):
 
 
 class AortaDataset3DCenter(Dataset):
-    def __init__(self, img_dir, transform, depth, step=1, residual=False, supcon=False):
+    def __init__(self, img_dir, transform, depth, step=1, residual=False, supcon=False, mask_dir=None):
         self.img_dir = img_dir
         self.transform = transform
         assert depth % 2 == 1, 'depth should be odd number.'
@@ -270,6 +270,7 @@ class AortaDataset3DCenter(Dataset):
         self.step = step
         self.residual = residual
         self.supcon = supcon
+        self.mask_dir = mask_dir
         self.labels = sorted([label for label in listdir(img_dir) if isdir(join(img_dir, label))])
         self.datas = []
         for i, label in enumerate(self.labels):
@@ -322,7 +323,11 @@ class AortaDataset3DCenter(Dataset):
                     if s == 0:
                         break
                 assert len(group_list) == depth, f'depth wrong: {img_list[j]}'
-                self.datas.append([[join(img_dir, label, img) for img in group_list], i])
+                if mask_dir is None:
+                    self.datas.append([[join(img_dir, label, img) for img in group_list], i])
+                else:
+                    group_mask_list = [join(mask_dir, img) if exists(join(mask_dir, img)) else None for img in group_list]
+                    self.datas.append([[join(img_dir, label, img) for img in group_list], i, group_mask_list])
         train_log = logging.getLogger('train_log')
         train_log.info(f'Creating dataset with {len(self.datas)} examples. Depth:{depth}, Step:{step}, Residual:{residual}')
 
@@ -331,9 +336,8 @@ class AortaDataset3DCenter(Dataset):
 
     def __getitem__(self, i):
         label = torch.tensor(self.datas[i][1], dtype=torch.long)
-        img_path_list = self.datas[i][0]
         img_list = []
-        for img_path in img_path_list:
+        for img_path in self.datas[i][0]:
             img_list.append(Image.open(img_path))
         if self.supcon:
             img_list1 = self.transform(img_list)
@@ -351,7 +355,7 @@ class AortaDataset3DCenter(Dataset):
                     img_list2.append(res)
             imgs2 = torch.stack(img_list2, dim=1)
             return [imgs1, imgs2], label
-        else:
+        elif self.mask_dir is None:
             img_list = self.transform(img_list)
             if self.residual:
                 for i in range(1, len(img_list)):
@@ -360,6 +364,19 @@ class AortaDataset3DCenter(Dataset):
                     img_list.append(res)
             imgs = torch.stack(img_list, dim=1)
             return imgs, label
+        else:
+            mask_list = []
+            for i, mask_path in enumerate(self.datas[i][2]):
+                if mask_path is None:
+                    mask = Image.fromarray(np.ones((img_list[i].height, img_list[i].width), dtype=np.uint8)*255)
+                else:
+                    mask = Image.open(mask_path)
+                mask_list.append(mask)
+            cat_list = img_list + mask_list
+            cat_list = self.transform(cat_list)
+            img_list, mask_list = cat_list[:self.depth], cat_list[self.depth:]
+            imgs, masks = torch.stack(img_list, dim=1), torch.stack(mask_list, dim=1)
+            return imgs, label, masks
 
 
 class MultiChannel(Dataset):
@@ -375,10 +392,10 @@ class MultiChannel(Dataset):
                 c1 = join(img_dir, label, img)
                 c2 = join(c2_dir, label, img)
                 c3 = join(c3_dir, label, img)
-                if not os.path.exists(c2) or not os.path.exists(c3):
-                    if not os.path.exists(c2):
+                if not exists(c2) or not exists(c3):
+                    if not exists(c2):
                         not_exist_list.append(c2)
-                    if not os.path.exists(c3):
+                    if not exists(c3):
                         not_exist_list.append(c3)
                     continue
                 self.datas.append([[c1, c2, c3], i])
@@ -412,7 +429,7 @@ class MaskDataset(Dataset):
             for img in img_list:
                 img_path = join(img_dir, label, img)
                 mask_path = join(mask_dir, img)
-                if not os.path.exists(mask_path):
+                if not exists(mask_path):
                     mask_path = None
                 self.datas.append([img_path, mask_path, i])
         train_log = logging.getLogger('train_log')
@@ -429,4 +446,4 @@ class MaskDataset(Dataset):
         else:
             mask = Image.open(self.datas[i][1])
         img, mask = self.transform([img, mask])
-        return img, mask, label
+        return img, label, mask

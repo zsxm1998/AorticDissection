@@ -3,6 +3,7 @@ import sys
 import warnings
 import time
 import yaml
+from collections import OrderedDict
 from types import SimpleNamespace
 
 import numpy as np
@@ -104,7 +105,7 @@ def train_net(net,
             MT.Resize3D(img_size),
             MT.CenterCrop3D(img_size), 
             T.RandomChoice([MT.RandomHorizontalFlip3D(), MT.RandomVerticalFlip3D()]),
-            T.RandomApply([MT.ColorJitter3D(0.4, 0.4, 0.4, 0.1)], p=0.7),
+            T.RandomApply([MT.ColorJitter3D(0.4, 0.4, 0.4, 0.1, apply_idx=list(range(args.depth_3d)))], p=0.7),
             T.RandomApply([MT.RandomRotation3D(45, T.InterpolationMode.BILINEAR)], p=0.4),
             MT.ToTensor3D(), 
         ])
@@ -132,7 +133,7 @@ def train_net(net,
         ])
 
     if flag_3d:
-        train = AortaDataset3DCenter(os.path.join(dir_img, 'train'), transform=train_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
+        train = AortaDataset3DCenter(os.path.join(dir_img, 'train'), transform=train_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d, mask_dir=os.path.join(dir_img,'..','mask'))
         val = AortaDataset3DCenter(os.path.join(dir_img, 'val'), transform=val_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
     else:
         train = MaskDataset(os.path.join(dir_img, 'train'), mask_dir=os.path.join(dir_img, 'mask'), transform=train_transform)
@@ -167,10 +168,10 @@ def train_net(net,
             gi = GradIntegral(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1, net.encoder.layer3[5].conv2, net.encoder.layer2[3].conv2])
         if flag_3d:
             gc = GradConstraint(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1], 
-                                ['/nfs3-p2/zsxm/temp_path/3dconv2.npy', '/nfs3-p2/zsxm/temp_path/3dconv1.npy'], flag_3d=flag_3d)
+                                ['/nfs3-p2/zsxm/temp_path/3dconv2.npy', '/nfs3-p2/zsxm/temp_path/3dconv1.npy', '/nfs3-p2/zsxm/temp_path/3dlayer3_conv2.npy', '/nfs3-p2/zsxm/temp_path/3dlayer2_conv2.npy'], flag_3d=flag_3d)
         else:
             gc = GradConstraint(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1, net.encoder.layer3[5].conv2, net.encoder.layer2[3].conv2], 
-                                ['/nfs3-p2/zsxm/temp_path/conv2.npy', '/nfs3-p2/zsxm/temp_path/conv1.npy', '/nfs3-p2/zsxm/temp_path/layer3_conv2.npy', '/nfs3-p2/zsxm/temp_path/layer2_conv2.npy'])
+                                ['/nfs3-p2/zsxm/temp_path/pos_conv2.npy', '/nfs3-p2/zsxm/temp_path/pos_conv1.npy', '/nfs3-p2/zsxm/temp_path/pos_layer3_conv2.npy', '/nfs3-p2/zsxm/temp_path/pos_layer2_conv2.npy'])
 
     if args.optimizer.lower() == 'rmsprop':
         optimizer = optim.RMSprop(net.parameters() if args.entire else net.fc.parameters(), lr=lr, weight_decay=1e-8, momentum=0.9)
@@ -196,15 +197,11 @@ def train_net(net,
             if args.noise:
                 gi.add_noise()
             gc.add_hook()
-            epoch_loss = 0
+            epoch_loss, epoch_cls_loss, epoch_channel_loss, epoch_spatial_loss = 0, 0, 0, 0
             true_list = []
             pred_list = []
             with tqdm(total=n_train, desc=f'Epoch {epoch + 1}/{epochs}', unit='img') as pbar:
-                for datas in train_loader:
-                    if flag_3d:
-                        imgs, true_categories = datas
-                    else:
-                        imgs, masks, true_categories = datas
+                for imgs, true_categories, masks in train_loader:
                     global_step += 1
                     assert imgs.shape[1] == net.n_channels, \
                         f'Network has been defined with {net.n_channels} input channels, ' \
@@ -212,8 +209,7 @@ def train_net(net,
                         'the images are loaded correctly.'
 
                     imgs = imgs.to(device=device, dtype=torch.float32)
-                    if not flag_3d:
-                        masks = masks.to(device=device, dtype=torch.float32)
+                    masks = masks.to(device=device, dtype=torch.float32)
                     category_type = torch.float32 if net.n_classes == 1 else torch.long
                     true_categories = true_categories.to(device=device, dtype=category_type)
                     true_list += true_categories.tolist()
@@ -224,21 +220,23 @@ def train_net(net,
                         pred_list += categories_pred.detach().argmax(dim=1).tolist()
                         loss_cls = criterion(categories_pred, true_categories)
                         loss_channel = gc.loss_channel(categories_pred, true_categories)
-                        if not flag_3d:
-                            loss_spatial = gc.loss_spatial(categories_pred, true_categories, masks)
-                        else:
-                            loss_spatial = torch.tensor(0).to(device)
+                        loss_spatial = gc.loss_spatial(categories_pred, true_categories, masks)
                     else:
                         pred_list += (categories_pred.detach().squeeze(1) > 0).float().tolist()
                         loss_cls = criterion(categories_pred, true_categories.unsqueeze(1))
                         loss_channel, loss_spatial = torch.tensor(0).to(device), torch.tensor(0).to(device)
-                    #print('loss_cls:', loss_cls.item(), ', loss_channel:', loss_channel.item(), ', loss_spatial:', loss_spatial.item())
-                    loss = loss_cls + loss_channel * 1000 + loss_spatial * 1000
+                    loss = loss_cls + loss_channel * 3e10 + loss_spatial * 8e9
 
                     epoch_loss += loss.item() * imgs.size(0)
+                    epoch_cls_loss += loss_cls.item() * imgs.size(0)
+                    epoch_channel_loss += loss_channel.item() * imgs.size(0)
+                    epoch_spatial_loss += loss_spatial.item() * imgs.size(0)
                     writer.add_scalar('Loss/train', loss.item(), global_step)
+                    writer.add_scalar('Loss/cls_train', loss_cls.item(), global_step)
+                    writer.add_scalar('Loss/channel_train', loss_channel.item(), global_step)
+                    writer.add_scalar('Loss/spatial_train', loss_spatial.item(), global_step)
 
-                    pbar.set_postfix(**{'loss (batch)': loss.item()})
+                    pbar.set_postfix(OrderedDict(**{'loss (batch)': loss.item(), 'cls':loss_cls.item(), 'channel': loss_channel.item(), 'spatial':loss_spatial.item()}))
 
                     optimizer.zero_grad()
                     loss.backward()
@@ -251,7 +249,7 @@ def train_net(net,
                 gi.remove_noise()
             gc.remove_hook()
 
-            train_log.info('Train epoch {} loss: {}'.format(epoch + 1, epoch_loss / n_train))
+            train_log.info(f'Train epoch {epoch + 1} loss: {epoch_loss/n_train}, cls: {epoch_cls_loss/n_train}, channel: {epoch_channel_loss/n_train}, spatial:{epoch_spatial_loss/n_train}')
             train_log.info(f'Train epoch {epoch + 1} train report:\n'+metrics.classification_report(true_list, pred_list, digits=4))
 
             for tag, value in net.named_parameters():

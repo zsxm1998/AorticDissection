@@ -149,9 +149,12 @@ class GradConstraint:
         loss = 0
         for hook_module in self.hook_modules:
             grads = hook_module.grads(outputs=-nll_loss)
-            masks_bg = transforms.Resize((grads.shape[2], grads.shape[3]))(masks)
+            if self.flag_3d:
+                masks_bg = F.interpolate(masks, (grads.shape[2], grads.shape[3], grads.shape[4]), mode='trilinear')
+            else:
+                masks_bg = transforms.Resize((grads.shape[2], grads.shape[3]))(masks)
             masks_bg = 1 - masks_bg
-            grads_bg = torch.abs(masks_bg * grads) #F.relu(masks_bg * grads)
+            grads_bg = torch.abs(masks_bg * grads)#F.relu(masks_bg * grads)
             loss += grads_bg.sum()
         return loss
 
@@ -192,10 +195,10 @@ class GradConstraint:
         loss = 0
         if is_high:
             for b, l in enumerate(labels):
-                loss += (channel_grads[b] * channels[l]).sum()
+                loss += (channel_grads[b] * channels[l]).sum() #if l in [2, 3] else torch.tensor(0.).to(channel_grads.device)
         else:
             for b, l in enumerate(labels):
-                loss += (channel_grads[b] * (1 - channels[l])).sum()
+                loss += (channel_grads[b] * (1 - channels[l])).sum() #if l in [2, 3] else torch.tensor(0.).to(channel_grads.device)
         loss = loss / labels.size(0)
         return loss
 

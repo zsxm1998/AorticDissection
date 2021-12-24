@@ -4,7 +4,7 @@ model_name: resnet
 model_depth: 34
 n_channels: 1
 n_classes: 4
-load_model: /nfs3-p2/zsxm/temp_path/single81.pth
+load_model: /nfs3-p2/zsxm/temp_path/3d81.pth
 epochs: 50
 early_stopping: 0
 batch_size: 128
@@ -15,9 +15,9 @@ img_size: 81
 save_cp: false # whether save checkpoints
 load_optim: false # load optimizer from .pth file
 load_scheduler: false # load scheduler from .pth file
-dir_img: /nfs3-p2/zsxm/dataset/aorta_classify_ct_-100_500/
-info: model docter 加噪声，使用绝对值梯度，继续训练，通道约束只使用第一个
-flag_3d: false
+dir_img: /nfs3-p1/zsxm/dataset/aorta_classify_ct_-100_500/center
+info: model docter 3d,使用绝对值梯度，使用通道和空间约束，通道约束只用在最后一个卷积，增加layer2和layer3的空间约束，继续训练，通道系数设为3e10，空间系数设为8e9
+flag_3d: true
 depth_3d: 7
 step_3d: 1
 residual_3d: false
@@ -30,4 +30,4 @@ temperature: 0.1
 load_encoder: false #details/checkpoints/SupCon/11-12_13:40:42/Net_last.pth
 entire: true
 alpha: 0.3
-noise: true
+noise: false
