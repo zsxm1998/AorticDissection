@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import transforms
+import math
 
 
 class SupConLoss(nn.Module):
@@ -225,3 +226,59 @@ class GradIntegral:
         # noise = torch.normal(mean=0, std=3, size=outputs.shape).to(outputs.device)
         outputs += noise
         return outputs
+
+
+class ForwardNurse:
+    def __init__(self, module):
+        self.handle = module.register_forward_hook(self._modify_output)
+        self.channel_weight = None
+        
+    def _modify_output(self, module, inputs, outputs):
+        channel_sum = outputs.sum(dim=(2,3), keepdim=True) #[batch_size, channel, 1, 1]
+        channel_mean = channel_sum.mean(dim=1, keepdim=True) #[batch_size, 1, 1, 1]
+        self.channel_weight = F.sigmoid(channel_sum-channel_mean) #[batch_size, channel, 1, 1]
+        outputs = outputs * self.channel_weight
+        return outputs
+    
+    def remove(self):
+        self.handle.remove()
+
+
+class ForwardDoctor:
+    def __init__(self, model, modules, n_classes, alpha=0.999):
+        self.model = model
+        self.modules = modules
+        self.nurses = []
+        self.n_classes = n_classes
+        self.alpha = alpha
+        self.class_weights = [[0]*n_classes for _ in range(len(modules))]
+
+    def assign_nurses(self):
+        for module in self.modules:
+            self.nurses.append(ForwardNurse(module))
+
+    def remove_nurses(self):
+        for nurse in self.nurses:
+            nurse.remove()
+        self.nurses.clear()
+
+    def loss(self, outputs, labels):
+        pred_labels = torch.argmax(outputs, dim=1)
+        correct_indices = [torch.arange(labels.size(0))[torch.bitwise_and(pred_labels==labels, labels==i)] for i in range(self.n_classes)]
+        loss = 0
+        for i, nurse in enumerate(self.nurses):
+            channel_weight = nurse.channel_weight
+            nurse_loss = 0
+            for j in range(self.n_classes):
+                if correct_indices[j].size(0) != 0:
+                    if isinstance(self.class_weights[i][j], int):
+                        self.class_weights[i][j] = torch.mean(channel_weight[correct_indices[j]], dim=0).detach() #[channel, 1, 1]
+                    else:
+                        self.class_weights[i][j] = self.alpha*self.class_weights[i][j] + (1-self.alpha)*torch.mean(channel_weight[correct_indices[j]], dim=0).detach()
+                class_indices = labels == j
+                if class_indices.size(0) != 0:
+                    class_channel_weight = channel_weight[class_indices] #[class_batch_size, channel, 1, 1]
+                    class_channel_weight = (class_channel_weight - self.class_weights[i][j]).squeeze(-1).squeeze(-1)
+                    nurse_loss += torch.linalg.norm(class_channel_weight, dim=1).sum()
+            loss += nurse_loss / labels.size(0)
+        return loss / len(self.nurses)
