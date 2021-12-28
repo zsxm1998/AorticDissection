@@ -1,9 +1,11 @@
+import os
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import transforms
-import math
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 
 class SupConLoss(nn.Module):
@@ -279,6 +281,14 @@ class ForwardDoctor:
                 if class_indices.size(0) != 0:
                     class_channel_weight = channel_weight[class_indices] #[class_batch_size, channel, 1, 1]
                     class_channel_weight = (class_channel_weight - self.class_weights[i][j]).squeeze(-1).squeeze(-1)
-                    nurse_loss += torch.linalg.norm(class_channel_weight, dim=1).sum()
+                    nurse_loss += torch.linalg.vector_norm(class_channel_weight, dim=1, ord=2).sum()
             loss += nurse_loss / labels.size(0)
         return loss / len(self.nurses)
+
+    def visualize_class_weights(self, save_path):
+        f, axes = plt.subplots(figsize=(30, 5*len(self.class_weights)), nrows=len(self.class_weights), ncols=1)
+        for i, ax in (enumerate(axes) if isinstance(axes, np.ndarray) else enumerate([axes])):
+            ax.set_xlabel('channel')
+            ax.set_ylabel('category')
+            sns.heatmap(torch.stack(self.class_weights[i]).squeeze(-1).squeeze(-1).cpu().numpy(), annot=False, ax=ax)
+        plt.savefig(os.path.join(save_path, 'class_weights.png'), bbox_inches='tight')
