@@ -107,12 +107,14 @@ def train_net(net,
             T.RandomChoice([MT.RandomHorizontalFlip3D(), MT.RandomVerticalFlip3D()]),
             T.RandomApply([MT.ColorJitter3D(0.4, 0.4, 0.4, 0.1, apply_idx=list(range(args.depth_3d)))], p=0.7),
             T.RandomApply([MT.RandomRotation3D(45, T.InterpolationMode.BILINEAR)], p=0.4),
-            MT.ToTensor3D(), 
+            MT.ToTensor3D(),
+            MT.GaussianResidual(3, 1, False, flag_3d, apply_idx=list(range(args.depth_3d))),
         ])
         val_transform = T.Compose([
             MT.Resize3D(img_size),
             MT.CenterCrop3D(img_size),
             MT.ToTensor3D(),
+            MT.GaussianResidual(3, 1, False, flag_3d),
         ])
     else:
         train_transform = T.Compose([
@@ -122,13 +124,13 @@ def train_net(net,
             T.RandomApply([MT.ColorJitter3D(0.4, 0.4, 0.4, 0.1, apply_idx=[0])], p=0.7),
             T.RandomApply([MT.RandomRotation3D(45, T.InterpolationMode.BILINEAR)], p=0.4),
             MT.ToTensor3D(),
-            #MT.GaussianResidual(3, 1, False),
+            MT.GaussianResidual(3, 1, False),
         ])
         val_transform = T.Compose([
             T.Resize(img_size), # 缩放图片(Image)，保持长宽比不变，最短边为img_size像素
             T.CenterCrop(img_size), # 从图片中间切出img_size*img_size的图片
             T.ToTensor(), # 将图片(Image)转成Tensor，归一化至[0, 1]
-            #MT.GaussianResidual(3, 1, False),
+            MT.GaussianResidual(3, 1, False),
             #T.Normalize(mean=[.5], std=[.5]) # 标准化至[-1, 1]，规定均值和标准差
         ])
 
@@ -167,11 +169,11 @@ def train_net(net,
         if args.noise:
             gi = GradIntegral(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1, net.encoder.layer3[5].conv2, net.encoder.layer2[3].conv2])
         if flag_3d:
-            gc = GradConstraint(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1], 
-                                ['/nfs3-p2/zsxm/temp_path/3dconv2.npy', '/nfs3-p2/zsxm/temp_path/3dconv1.npy', '/nfs3-p2/zsxm/temp_path/3dlayer3_conv2.npy', '/nfs3-p2/zsxm/temp_path/3dlayer2_conv2.npy'], flag_3d=flag_3d)
+            gc = GradConstraint(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1, net.encoder.layer3[5].conv2, net.encoder.layer2[3].conv2], 
+                                ['/nfs3-p1/zsxm/ModelDoctor/3dsobel_pos_conv2.npy'], flag_3d=flag_3d)
         else:
             gc = GradConstraint(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1, net.encoder.layer3[5].conv2, net.encoder.layer2[3].conv2], 
-                                ['/nfs3-p2/zsxm/temp_path/pos_conv2.npy', '/nfs3-p2/zsxm/temp_path/pos_conv1.npy', '/nfs3-p2/zsxm/temp_path/pos_layer3_conv2.npy', '/nfs3-p2/zsxm/temp_path/pos_layer2_conv2.npy'])
+                                ['/nfs3-p2/zsxm/temp_path/pos_conv2.npy'])
 
     if args.optimizer.lower() == 'rmsprop':
         optimizer = optim.RMSprop(net.parameters() if args.entire else net.fc.parameters(), lr=lr, weight_decay=1e-8, momentum=0.9)

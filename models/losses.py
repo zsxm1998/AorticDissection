@@ -92,11 +92,11 @@ class SupConLoss(nn.Module):
 
         # loss
         loss = - (self.temperature / self.base_temperature) * mean_log_prob_pos
-        #loss = loss.view(anchor_count, batch_size).mean()
-        loss = loss.view(anchor_count, batch_size)
-        weight = torch.tensor([12434/6522, 12434/4370, 12424/1149, 12434/393]).to(device)
-        batch_weight = torch.gather(weight.unsqueeze(0).repeat(batch_size, 1), 1, labels.to(device)).detach()
-        loss = ((loss * batch_weight.T).sum(1) / batch_weight.sum()).mean()
+        loss = loss.view(anchor_count, batch_size).mean()
+        # loss = loss.view(anchor_count, batch_size)
+        # weight = torch.tensor([12434/6522, 12434/4370, 12424/1149, 12434/393]).to(device)
+        # batch_weight = torch.gather(weight.unsqueeze(0).repeat(batch_size, 1), 1, labels.to(device)).detach()
+        # loss = ((loss * batch_weight.T).sum(1) / batch_weight.sum()).mean()
 
         return loss
 
@@ -157,7 +157,7 @@ class GradConstraint:
             else:
                 masks_bg = transforms.Resize((grads.shape[2], grads.shape[3]))(masks)
             masks_bg = 1 - masks_bg
-            grads_bg = torch.abs(masks_bg * grads)#F.relu(masks_bg * grads)
+            grads_bg = F.relu(masks_bg * grads)#torch.abs(masks_bg * grads)
             loss += grads_bg.sum()
         return loss
 
@@ -192,7 +192,7 @@ class GradConstraint:
         return loss
 
     def _loss_channel(self, channels, grads, labels, is_high=True):
-        grads =  torch.abs(grads) #F.relu(grads)
+        grads = F.relu(grads) #torch.abs(grads)
         channel_grads = torch.sum(grads, dim=(2, 3)) if not self.flag_3d else torch.sum(grads, dim=(2, 3, 4))  # [batch_size, channels]
 
         loss = 0
@@ -238,8 +238,9 @@ class ForwardNurse:
     def _modify_output(self, module, inputs, outputs):
         channel_sum = outputs.sum(dim=(2,3), keepdim=True) #[batch_size, channel, 1, 1]
         channel_mean = channel_sum.mean(dim=1, keepdim=True) #[batch_size, 1, 1, 1]
-        self.channel_weight = F.sigmoid(channel_sum-channel_mean) #[batch_size, channel, 1, 1]
-        outputs = outputs * self.channel_weight
+        channel_weight = F.sigmoid(channel_sum-channel_mean) #[batch_size, channel, 1, 1]
+        self.channel_weight = channel_weight.squeeze(-1).squeeze(-1) #[batch_size, channel]
+        outputs = outputs*(channel_weight>0.5).float()#outputs = outputs * channel_weight
         return outputs
     
     def remove(self):
@@ -253,7 +254,9 @@ class ForwardDoctor:
         self.nurses = []
         self.n_classes = n_classes
         self.alpha = alpha
-        self.class_weights = [[0]*n_classes for _ in range(len(modules))]
+        self.class_weights_mean = [[0]*n_classes for _ in range(len(modules))]
+        self.class_weights_var = [[0]*n_classes for _ in range(len(modules))]
+        self.supcon_loss = SupConLoss()
 
     def assign_nurses(self):
         for module in self.modules:
@@ -265,30 +268,55 @@ class ForwardDoctor:
         self.nurses.clear()
 
     def loss(self, outputs, labels):
-        pred_labels = torch.argmax(outputs, dim=1)
+        probs = F.softmax(outputs, dim=1)
+        pred_labels = torch.argmax(probs, dim=1)
+        # all_correct_indices = torch.arange(labels.size(0))[pred_labels==labels]
         correct_indices = [torch.arange(labels.size(0))[torch.bitwise_and(pred_labels==labels, labels==i)] for i in range(self.n_classes)]
-        loss = 0
+        #all_correct_indices, _ = torch.sort(torch.cat([ci for ci in correct_indices if ci.size(0)>1]))
+        wrong_indices= [torch.arange(labels.size(0))[torch.bitwise_and(pred_labels!=labels, labels==i)] for i in range(self.n_classes)]
+        #wrong_num = sum([w.size(0) for w in wrong_indices])
+        correct_class_probs = [probs[correct_indices[i], i].unsqueeze(-1) for i in range(self.n_classes)]
+        loss = torch.tensor(0.).to(labels.device)
         for i, nurse in enumerate(self.nurses):
             channel_weight = nurse.channel_weight
-            nurse_loss = 0
+            nurse_loss = torch.tensor(0.).to(labels.device)
             for j in range(self.n_classes):
+                #根据预测正确的统计均值和方差
                 if correct_indices[j].size(0) != 0:
-                    if isinstance(self.class_weights[i][j], int):
-                        self.class_weights[i][j] = torch.mean(channel_weight[correct_indices[j]], dim=0).detach() #[channel, 1, 1]
+                    batch_correct_weights = (channel_weight[correct_indices[j]]*correct_class_probs[j]).sum(dim=0) / correct_class_probs[j].sum()
+                    if isinstance(self.class_weights_mean[i][j], int):
+                        # self.class_weights_mean[i][j] = torch.mean(channel_weight[correct_indices[j]], dim=0).detach() #[channel]
+                        # self.class_weights_var[i][j] = torch.var(channel_weight[correct_indices[j]], dim=0).detach() #[channel]
+                        self.class_weights_mean[i][j] = batch_correct_weights.detach()
                     else:
-                        self.class_weights[i][j] = self.alpha*self.class_weights[i][j] + (1-self.alpha)*torch.mean(channel_weight[correct_indices[j]], dim=0).detach()
-                class_indices = labels == j
-                if class_indices.size(0) != 0:
-                    class_channel_weight = channel_weight[class_indices] #[class_batch_size, channel, 1, 1]
-                    class_channel_weight = (class_channel_weight - self.class_weights[i][j]).squeeze(-1).squeeze(-1)
+                        # self.class_weights_mean[i][j] = self.alpha*self.class_weights_mean[i][j] + (1-self.alpha)*torch.mean(channel_weight[correct_indices[j]], dim=0).detach()
+                        # self.class_weights_var[i][j] = self.alpha*self.class_weights_var[i][j] + (1-self.alpha)*torch.var(channel_weight[correct_indices[j]], dim=0).detach()
+                        self.class_weights_mean[i][j] = self.alpha*self.class_weights_mean[i][j] + (1-self.alpha)*batch_correct_weights.detach()
+                # 对所有数据计算L2
+                # class_indices = labels == j
+                # if class_indices.size(0) != 0:
+                #     class_channel_weight = channel_weight[class_indices] #[class_batch_size, channel]
+                #     class_channel_weight = (class_channel_weight - self.class_weights_mean[i][j])
+                #     nurse_loss += torch.linalg.vector_norm(class_channel_weight, dim=1, ord=2).sum()
+                # 仅对预测错误的计算L2
+                if wrong_indices[j].size(0) != 0:
+                    class_channel_weight = channel_weight[wrong_indices[j]] #[class_batch_size, channel]
+                    class_channel_weight = (class_channel_weight - self.class_weights_mean[i][j])
+                    #small_var_gate = ((self.class_weights_var[i][j]-self.class_weights_var[i][j].mean())<0).float()
+                    #nurse_loss += torch.linalg.vector_norm(class_channel_weight*small_var_gate, dim=1, ord=2).sum()
                     nurse_loss += torch.linalg.vector_norm(class_channel_weight, dim=1, ord=2).sum()
+            # if wrong_num != 0:
+            #     loss += nurse_loss / wrong_num
             loss += nurse_loss / labels.size(0)
+            # if all_correct_indices.size(0) != 0:
+            #     loss += self.supcon_loss(F.normalize(channel_weight[all_correct_indices], dim=1).unsqueeze(1), labels[all_correct_indices])
         return loss / len(self.nurses)
 
     def visualize_class_weights(self, save_path):
-        f, axes = plt.subplots(figsize=(30, 5*len(self.class_weights)), nrows=len(self.class_weights), ncols=1)
+        f, axes = plt.subplots(figsize=(30, 5*len(self.class_weights_mean)), nrows=len(self.class_weights_mean), ncols=1)
         for i, ax in (enumerate(axes) if isinstance(axes, np.ndarray) else enumerate([axes])):
             ax.set_xlabel('channel')
             ax.set_ylabel('category')
-            sns.heatmap(torch.stack(self.class_weights[i]).squeeze(-1).squeeze(-1).cpu().numpy(), annot=False, ax=ax)
+            sns.heatmap(torch.stack(self.class_weights_mean[i]).cpu().numpy(), annot=False, ax=ax)
         plt.savefig(os.path.join(save_path, 'class_weights.png'), bbox_inches='tight')
+        sns.distplot()

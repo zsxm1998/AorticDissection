@@ -28,6 +28,7 @@ from utils.datasets import AortaDataset3D, LabelSampler, AortaDataset3DCenter, M
 from models.SupCon import *
 from models.losses import SupConLoss
 from utils import transforms as MT
+from models.convnext import convnext_tiny
 
 warnings.filterwarnings("ignore")
 np.random.seed(63910)
@@ -59,6 +60,10 @@ def create_net(device,
         elif model_name.lower() == 'efficientnet':
             net = models.efficientnet_b3(num_channels=n_channels, num_classes=n_classes)
             net.n_channels, net.n_classes, net.net_name = n_channels, n_classes, "EfficientNet-B3"
+        elif model_name.lower() == 'convnext':
+            net = convnext_tiny(in_chans=n_channels, num_classes=n_classes)
+            net.n_channels, net.n_classes, net.net_name = n_channels, n_classes, "ConvNeXt_tiny"
+
 
     train_log.info('**********************************************************************\n'
                  f'Network: {net.net_name}\n'
@@ -113,12 +118,14 @@ def train_net(net,
             T.RandomChoice([MT.RandomHorizontalFlip3D(), MT.RandomVerticalFlip3D()]),
             T.RandomApply([MT.ColorJitter3D(0.4, 0.4, 0.4, 0.1)], p=0.7),
             T.RandomApply([MT.RandomRotation3D(45, T.InterpolationMode.BILINEAR)], p=0.4),
-            MT.ToTensor3D(), 
+            MT.ToTensor3D(),
+            MT.GaussianResidual(3, 1, False, flag_3d),
         ])
         val_transform = T.Compose([
             MT.Resize3D(img_size),
             MT.CenterCrop3D(img_size),
             MT.ToTensor3D(),
+            MT.GaussianResidual(3, 1, False, flag_3d),
         ])
     else:
         train_transform = T.Compose([
@@ -128,13 +135,13 @@ def train_net(net,
             T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.7),
             T.RandomApply([T.RandomRotation(45, T.InterpolationMode.BILINEAR)], p=0.4),
             T.ToTensor(),
-            #MT.GaussianResidual(3, 1, False),
+            MT.GaussianResidual(3, 1, False),
         ])
         val_transform = T.Compose([
             T.Resize(img_size), # 缩放图片(Image)，保持长宽比不变，最短边为img_size像素
             T.CenterCrop(img_size), # 从图片中间切出img_size*img_size的图片
             T.ToTensor(), # 将图片(Image)转成Tensor，归一化至[0, 1]
-            #MT.GaussianResidual(3, 1, False),
+            MT.GaussianResidual(3, 1, False),
             #T.Normalize(mean=[.5], std=[.5]) # 标准化至[-1, 1]，规定均值和标准差
         ])
 
@@ -174,10 +181,10 @@ def train_net(net,
         train = AortaDataset3DCenter(os.path.join(dir_img, 'train'), transform=train_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
         val = AortaDataset3DCenter(os.path.join(dir_img, 'val'), transform=val_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d)
     else:
-        # train = ImageFolder(os.path.join(dir_img, 'train'), transform=train_transform, loader=lambda path: Image.open(path))
-        # val = ImageFolder(os.path.join(dir_img, 'val'), transform=val_transform, loader=lambda path: Image.open(path))
-        train = MultiChannel(os.path.join(dir_img, 'train'), '/nfs3-p1/zsxm/dataset/aorta_classify_ct_0_300', '/nfs3-p1/zsxm/dataset/aorta_classify_ct_0_100', train_transform)
-        val = MultiChannel(os.path.join(dir_img, 'val'), '/nfs3-p1/zsxm/dataset/aorta_classify_ct_0_300', '/nfs3-p1/zsxm/dataset/aorta_classify_ct_0_100', val_transform)
+        train = ImageFolder(os.path.join(dir_img, 'train'), transform=train_transform, loader=lambda path: Image.open(path))
+        val = ImageFolder(os.path.join(dir_img, 'val'), transform=val_transform, loader=lambda path: Image.open(path))
+        # train = MultiChannel(os.path.join(dir_img, 'train'), '/nfs3-p1/zsxm/dataset/aorta_classify_ct_0_300', '/nfs3-p1/zsxm/dataset/aorta_classify_ct_0_100', train_transform)
+        # val = MultiChannel(os.path.join(dir_img, 'val'), '/nfs3-p1/zsxm/dataset/aorta_classify_ct_0_300', '/nfs3-p1/zsxm/dataset/aorta_classify_ct_0_100', val_transform)
     
     lsampler = None#LabelSampler(train)
     n_train = len(train) #len(lsampler)
@@ -224,8 +231,8 @@ def train_net(net,
         optimizer = optim.NAdam(net.parameters() if args.entire else module.fc.parameters(), lr=lr)
     else:
         raise NotImplementedError(f'optimizer not supported: {args.optimizer}')
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=10, factor=0.1, cooldown=1, min_lr=1e-8, verbose=True)
-    #scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-8)
+    #scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=10, factor=0.1, cooldown=1, min_lr=1e-8, verbose=True)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-8)
     if load_optim:
         optimizer.load_state_dict(torch.load(load_optim, map_location=device))
     if load_scheduler:
@@ -286,7 +293,7 @@ def train_net(net,
                 if value.grad is not None:
                     writer.add_histogram('grads/' + tag, value.grad.data.cpu().numpy(), global_step)
             val_score, val_loss = eval_net(net, val_loader, n_val, device)
-            scheduler.step(val_score)
+            scheduler.step()#scheduler.step(val_score)
             writer.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], global_step)
 
             if module.n_classes > 1:
@@ -327,7 +334,7 @@ def train_net(net,
             else:
                 useless_epoch_count += 1
             
-            if save_cp:
+            if save_cp or (epoch+1)%5==0:
                 if not os.path.exists(dir_checkpoint):
                     os.makedirs(dir_checkpoint)
                     train_log.info('Created checkpoint directory')

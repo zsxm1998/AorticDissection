@@ -1,10 +1,10 @@
-device: 0 # cuda device to use, i.e. 0 or 0,1,2,3 or cpu'
-method: forward_doctor
+device: 1 # cuda device to use, i.e. 0 or 0,1,2,3 or cpu'
+method: model_doctor
 model_name: resnet
 model_depth: 34
-n_channels: 1
-n_classes: 4
-load_model: /nfs3-p2/zsxm/temp_path/single81.pth
+n_channels: 2
+n_classes: 3
+load_model: details/checkpoints/CrossEntropy/01-12_15:40:15/Net_epoch20.pth #/nfs3-p2/zsxm/temp_path/single81.pth
 epochs: 50
 early_stopping: 0
 batch_size: 128
@@ -15,9 +15,9 @@ img_size: 81
 save_cp: false # whether save checkpoints
 load_optim: false # load optimizer from .pth file
 load_scheduler: false # load scheduler from .pth file
-dir_img: /nfs3-p1/zsxm/dataset/aorta_classify_ct_-100_500
-info: forward doctor, 使用layer4的所有BN层，无噪声，alpha设为0.999
-flag_3d: false
+dir_img: /nfs3-p1/zsxm/dataset/aorta_classify_ct_-100_500/center
+info: 去掉溃疡后交叉熵三分类, Sobel不平滑，3dcenter, model doctor, 正梯度，从第20轮开始训练, 加噪声
+flag_3d: True
 depth_3d: 7
 step_3d: 1
 residual_3d: false
@@ -30,4 +30,4 @@ temperature: 0.1
 load_encoder: false #details/checkpoints/SupCon/11-12_13:40:42/Net_last.pth
 entire: true
 alpha: 0.3
-noise: false
+noise: True

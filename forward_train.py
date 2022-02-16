@@ -172,7 +172,7 @@ def train_net(net,
                                n_classes=net.n_classes)
         else:
             fd = ForwardDoctor(net,
-                               [m for m in net.encoder.layer4.modules() if isinstance(m, nn.BatchNorm2d)], #[net.encoder.layer4[2].conv2],
+                               [m for m in net.encoder.layer4.modules() if isinstance(m, nn.BatchNorm2d)], #[net.encoder.layer4[2].bn2],
                                n_classes=net.n_classes)
 
     if args.optimizer.lower() == 'rmsprop':
@@ -193,12 +193,13 @@ def train_net(net,
     global_step = 0
     best_val_score = -1 #float('inf') if net.n_classes > 1 else -1
     useless_epoch_count = 0
+    fd.assign_nurses()
     for epoch in range(epochs):
         try:
             net.train()
             if args.noise:
                 gi.add_noise()
-            fd.assign_nurses()
+            #fd.assign_nurses()
             epoch_loss, epoch_cls_loss, epoch_doctor_loss = 0, 0, 0
             true_list = []
             pred_list = []
@@ -246,7 +247,7 @@ def train_net(net,
 
             if args.noise:
                 gi.remove_noise()
-            fd.remove_nurses()
+            #fd.remove_nurses()
 
             train_log.info(f'Train epoch {epoch + 1} loss: {epoch_loss/n_train}, cls: {epoch_cls_loss/n_train}, doctor: {epoch_doctor_loss/n_train}')
             train_log.info(f'Train epoch {epoch + 1} train report:\n'+metrics.classification_report(true_list, pred_list, digits=4))
@@ -294,6 +295,7 @@ def train_net(net,
                     train_log.info('Created checkpoint directory')
                 torch.save(net.state_dict(), dir_checkpoint + 'Net_best.pth')
                 train_log.info('Best model saved !')
+                fd.visualize_class_weights(dir_checkpoint)
                 useless_epoch_count = 0
             else:
                 useless_epoch_count += 1
@@ -312,7 +314,7 @@ def train_net(net,
             train_log.info('Receive KeyboardInterrupt, stop training...')
             if args.noise:
                 gi.remove_noise()
-            fd.remove_nurses()
+            #fd.remove_nurses()
             break
 
     torch.save(optimizer.state_dict(), dir_checkpoint + f'Optimizer.pth')
@@ -326,6 +328,10 @@ def train_net(net,
     args.load_model = os.path.join(dir_checkpoint, 'Net_best.pth')
     args.flag_3d = flag_3d
     net = create_net(device, **vars(args))
+    fd = ForwardDoctor(net,
+                       [m for m in net.encoder.layer4.modules() if isinstance(m, nn.BatchNorm2d)], #[net.encoder.layer4[2].bn2],
+                       n_classes=net.n_classes)
+    fd.assign_nurses()
     val_score, val_loss, PR_curve_img = eval_net(net, val_loader, n_val, device, final=True, PR_curve_save_dir=dir_checkpoint)
     writer.add_images('PR-curve', np.array(Image.open(PR_curve_img)), dataformats='HWC')
     if net.n_classes > 1:
