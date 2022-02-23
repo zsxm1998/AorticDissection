@@ -98,7 +98,7 @@ def train_net(net,
     
     os.makedirs(dir_checkpoint, exist_ok=True)
     dir_checkpoint = os.path.join(dir_checkpoint, train_log.train_time_str + '/')
-    writer = SummaryWriter(log_dir=f'details/runs/{train_log.train_time_str}_{net.net_name}_LR_{lr}_BS_{batch_size}_ImgSize_{img_size}')
+    writer = SummaryWriter(log_dir=f'details/runs/{train_log.train_time_str}_{net.net_name}_{info}')
 
     if flag_3d:
         train_transform = T.Compose([
