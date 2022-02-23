@@ -120,12 +120,13 @@ class HookModule:
 
 class GradConstraint:
 
-    def __init__(self, model, modules, channel_paths, flag_3d=False):
+    def __init__(self, model, modules, channel_paths, flag_3d=False, relu=False):
         self.model = model
         self.modules = modules
         self.hook_modules = []
         self.channels = []
         self.flag_3d = flag_3d
+        self.relu = relu
 
         for channel_path in channel_paths:
             self.channels.append(torch.from_numpy(np.load(channel_path)).cuda())
@@ -157,7 +158,10 @@ class GradConstraint:
             else:
                 masks_bg = transforms.Resize((grads.shape[2], grads.shape[3]))(masks)
             masks_bg = 1 - masks_bg
-            grads_bg = F.relu(masks_bg * grads)#torch.abs(masks_bg * grads)
+            if self.relu:
+                grads_bg = F.relu(masks_bg * grads)
+            else:
+                grads_bg = torch.abs(masks_bg * grads)
             loss += grads_bg.sum()
         return loss
 
@@ -192,7 +196,10 @@ class GradConstraint:
         return loss
 
     def _loss_channel(self, channels, grads, labels, is_high=True):
-        grads = F.relu(grads) #torch.abs(grads)
+        if self.relu:
+            grads = F.relu(grads) 
+        else:
+            grads = torch.abs(grads)
         channel_grads = torch.sum(grads, dim=(2, 3)) if not self.flag_3d else torch.sum(grads, dim=(2, 3, 4))  # [batch_size, channels]
 
         loss = 0
