@@ -272,8 +272,8 @@ class ToTensor3D:
         return self.__class__.__name__ + '()'
 
 
-class GaussianResidual(torch.nn.Module):
-    def __init__(self, ksize, sigma, before=True, flag_3d=False, apply_idx=None):
+class SobelChannel(torch.nn.Module):
+    def __init__(self, ksize, flag_3d=False, apply_idx=None):
         super().__init__()
         if isinstance(ksize, int):
             assert ksize <= 0 or ksize % 2 == 1, f'ksize should be either odd or <= 0, but ksize={ksize}.'
@@ -283,46 +283,26 @@ class GaussianResidual(torch.nn.Module):
             self.ksize = tuple(ksize)
         else:
             raise TypeError("ksize should be a single number or a list/tuple with length 2.")
-        self.sigma = sigma
-        self.before = before
         self.flag_3d = flag_3d
         self.apply_idx = apply_idx
 
     def forward(self, img):
-        if self.before:
-            if self.flag_3d:
-                raise NotImplementedError('在前和3d组合没有实现。')
-            else:
-                img = np.asarray(img)
-                img_gau = cv2.GaussianBlur(img, self.ksize, self.sigma)
-                res = img - img_gau
-                res = np.stack((img, res), axis=-1)
-                return Image.fromarray(res)
+        if self.flag_3d:
+            for i, im in enumerate(img):
+                if self.apply_idx is None or i in self.apply_idx:
+                    im = im.permute((1,2,0)).squeeze(-1).numpy()
+                    g1_x = cv2.Sobel(im, -1, dx=1, dy=0, ksize=self.ksize[0])
+                    g1_y = cv2.Sobel(im, -1, dx=0, dy=1, ksize=self.ksize[0])
+                    g1 = np.abs(g1_x) + np.abs(g1_y)
+                    #g1 = cv2.blur(g1, self.ksize)
+                    res = np.stack((im, g1), axis=-1)
+                    img[i] = torch.from_numpy(res).permute((2,0,1))
+            return img
         else:
-            if self.flag_3d:
-                for i, im in enumerate(img):
-                    if self.apply_idx is None or i in self.apply_idx:
-                        im = im.permute((1,2,0)).squeeze(-1).numpy()
-                        g1_x = cv2.Sobel(im, -1, dx=1, dy=0, ksize=self.ksize[0])
-                        g1_y = cv2.Sobel(im, -1, dx=0, dy=1, ksize=self.ksize[0])
-                        g1 = np.abs(g1_x) + np.abs(g1_y)
-                        #g1 = cv2.blur(g1, self.ksize)
-                        res = np.stack((im, g1), axis=-1)
-                        img[i] = torch.from_numpy(res).permute((2,0,1))
-                return img
-            else:
-                # img_gau = img.permute((1,2,0)).numpy()
-                # img_gau = cv2.GaussianBlur(img_gau, self.ksize, self.sigma)
-                # img_gau = torch.from_numpy(img_gau).unsqueeze(-1).permute((2,0,1))
-                # res = img - img_gau
-                # return torch.cat([img, res], dim=0)
-                img = img.permute((1,2,0)).squeeze(-1).numpy()
-                #img_gau = cv2.GaussianBlur(img, self.ksize, self.sigma)
-                #g2 = cv2.Laplacian(img_gau, -1, ksize=self.ksize[0])
-                g1_x = cv2.Sobel(img, -1, dx=1, dy=0, ksize=self.ksize[0])
-                g1_y = cv2.Sobel(img, -1, dx=0, dy=1, ksize=self.ksize[0])
-                g1 = np.abs(g1_x) + np.abs(g1_y)
-                #g1 = cv2.blur(g1, self.ksize)
-                #res = img_gau - g2
-                res = np.stack((img, g1), axis=-1)
-                return torch.from_numpy(res).permute((2,0,1))
+            img = img.permute((1,2,0)).squeeze(-1).numpy()
+            g1_x = cv2.Sobel(img, -1, dx=1, dy=0, ksize=self.ksize[0])
+            g1_y = cv2.Sobel(img, -1, dx=0, dy=1, ksize=self.ksize[0])
+            g1 = np.abs(g1_x) + np.abs(g1_y)
+            #g1 = cv2.blur(g1, self.ksize)
+            res = np.stack((img, g1), axis=-1)
+            return torch.from_numpy(res).permute((2,0,1))
