@@ -101,37 +101,45 @@ def train_net(net,
     writer = SummaryWriter(log_dir=f'details/runs/{train_log.train_time_str}_{net.net_name}_{info}')
 
     if flag_3d:
-        train_transform = T.Compose([
+        tt_list = [
             MT.Resize3D(img_size),
             MT.CenterCrop3D(img_size), 
             T.RandomChoice([MT.RandomHorizontalFlip3D(), MT.RandomVerticalFlip3D()]),
             T.RandomApply([MT.ColorJitter3D(0.4, 0.4, 0.4, 0.1, apply_idx=list(range(args.depth_3d)))], p=0.7),
             T.RandomApply([MT.RandomRotation3D(45, T.InterpolationMode.BILINEAR)], p=0.4),
             MT.ToTensor3D(),
-            #MT.SobelChannel(3, flag_3d, apply_idx=list(range(args.depth_3d))),
-        ])
-        val_transform = T.Compose([
+        ]
+        if args.sobel:
+            tt_list.append(MT.SobelChannel(3, flag_3d, apply_idx=list(range(args.depth_3d))))
+        train_transform = T.Compose(tt_list)
+        vt_list = [
             MT.Resize3D(img_size),
             MT.CenterCrop3D(img_size),
             MT.ToTensor3D(),
-            #MT.SobelChannel(3, flag_3d),
-        ])
+        ]
+        if args.sobel:
+            vt_list.append(MT.SobelChannel(3, flag_3d))
+        val_transform = T.Compose(vt_list)
     else:
-        train_transform = T.Compose([
+        tt_list = [
             MT.Resize3D(img_size),
             MT.CenterCrop3D(img_size),
             T.RandomChoice([MT.RandomHorizontalFlip3D(), MT.RandomVerticalFlip3D()]),
             T.RandomApply([MT.ColorJitter3D(0.4, 0.4, 0.4, 0.1, apply_idx=[0])], p=0.7),
             T.RandomApply([MT.RandomRotation3D(45, T.InterpolationMode.BILINEAR)], p=0.4),
             MT.ToTensor3D(),
-            #MT.SobelChannel(3, flag_3d=True, apply_idx=[0]),
-        ])
-        val_transform = T.Compose([
+        ]
+        if args.sobel:
+            tt_list.append(MT.SobelChannel(3, flag_3d=True, apply_idx=[0]))
+        train_transform = T.Compose(tt_list)
+        vt_list = [
             T.Resize(img_size),
             T.CenterCrop(img_size),
             T.ToTensor(),
-            #MT.SobelChannel(3),
-        ])
+        ]
+        if args.sobel:
+            vt_list.append(MT.SobelChannel(3))
+        val_transform = T.Compose(vt_list)
 
     if flag_3d:
         train = AortaDataset3DCenter(os.path.join(dir_img, 'train'), transform=train_transform, depth=args.depth_3d, step=args.step_3d, residual=args.residual_3d, mask_dir=os.path.join(dir_img,'..','mask'))
@@ -169,10 +177,10 @@ def train_net(net,
             gi = GradIntegral(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1, net.encoder.layer3[5].conv2, net.encoder.layer2[3].conv2])
         if flag_3d:
             gc = GradConstraint(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1, net.encoder.layer3[5].conv2, net.encoder.layer2[3].conv2], 
-                                [''], flag_3d=flag_3d, relu=False)
+                                [args.channel_path], flag_3d=flag_3d, relu=args.relu)
         else:
             gc = GradConstraint(net, [net.encoder.layer4[2].conv2, net.encoder.layer4[2].conv1, net.encoder.layer3[5].conv2, net.encoder.layer2[3].conv2], 
-                                ['/nfs3-p2/zsxm/ModelDoctor/conv2_relu.npy'], relu=True)
+                                [args.channel_path], relu=args.relu)
 
     if args.optimizer.lower() == 'rmsprop':
         optimizer = optim.RMSprop(net.parameters() if args.entire else net.fc.parameters(), lr=lr, weight_decay=1e-8, momentum=0.9)

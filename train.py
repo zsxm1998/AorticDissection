@@ -112,38 +112,43 @@ def train_net(net,
     writer = SummaryWriter(log_dir=f'details/runs/{train_log.train_time_str}_{module.net_name}_{info}')
 
     if flag_3d:
-        train_transform = T.Compose([
+        tt_list = [
             MT.Resize3D(img_size),
             MT.CenterCrop3D(img_size), 
             T.RandomChoice([MT.RandomHorizontalFlip3D(), MT.RandomVerticalFlip3D()]),
             T.RandomApply([MT.ColorJitter3D(0.4, 0.4, 0.4, 0.1)], p=0.7),
             T.RandomApply([MT.RandomRotation3D(45, T.InterpolationMode.BILINEAR)], p=0.4),
             MT.ToTensor3D(),
-            MT.SobelChannel(3, flag_3d=flag_3d),
-        ])
-        val_transform = T.Compose([
+        ]
+        vt_list = [
             MT.Resize3D(img_size),
             MT.CenterCrop3D(img_size),
             MT.ToTensor3D(),
-            MT.SobelChannel(3, flag_3d=flag_3d),
-        ])
+        ]
+        if args.sobel:
+            tt_list.append(MT.SobelChannel(3, flag_3d=flag_3d))
+            vt_list.append(MT.SobelChannel(3, flag_3d=flag_3d))
+        train_transform = T.Compose(tt_list)
+        val_transform = T.Compose(vt_list)
     else:
-        train_transform = T.Compose([
+        tt_list = [
             T.Resize(img_size),
             T.CenterCrop(img_size),
             T.RandomChoice([T.RandomHorizontalFlip(), T.RandomVerticalFlip()]),
             T.RandomApply([T.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.7),
             T.RandomApply([T.RandomRotation(45, T.InterpolationMode.BILINEAR)], p=0.4),
             T.ToTensor(),
-            MT.SobelChannel(3),
-        ])
-        val_transform = T.Compose([
-            T.Resize(img_size), # 缩放图片(Image)，保持长宽比不变，最短边为img_size像素
-            T.CenterCrop(img_size), # 从图片中间切出img_size*img_size的图片
-            T.ToTensor(), # 将图片(Image)转成Tensor，归一化至[0, 1]
-            MT.SobelChannel(3),
-            #T.Normalize(mean=[.5], std=[.5]) # 标准化至[-1, 1]，规定均值和标准差
-        ])
+        ]
+        vt_list = [
+            T.Resize(img_size),
+            T.CenterCrop(img_size),
+            T.ToTensor(),
+        ]
+        if args.sobel:
+            tt_list.append(MT.SobelChannel(3))
+            vt_list.append(MT.SobelChannel(3))
+        train_transform = T.Compose(tt_list)
+        val_transform = T.Compose(vt_list)
 
     def pil_loader(path):
         with open(path, 'rb') as f:
